@@ -1,0 +1,989 @@
+﻿🌿  NaMo Care Companion
+Technical Handoff Document
+สำหรับทีมพัฒนา — ครบถ้วน พร้อมสร้าง พร้อมส่งมอบ
+ระบบเพื่อนดูแลผู้สูงอายุผ่าน LINE  ·  AI-Powered Care Companion Platform
+เอกสาร
+Technical Specification & Build Handoff
+เวอร์ชัน
+v1.0 — Production-Ready Blueprint
+Platform
+LINE + Firebase + Namo Nexus AI (LLM)
+Target Users
+ผู้สูงอายุ (ผู้ใช้หลัก) + ครอบครัว/ผู้ดูแล
+0. เข็มทิศโปรเจกต์ — ภาพรวมเพื่อทีม
+NaMo Care Companion คืออะไร?  ระบบ AI Companion บน LINE ที่ดูแลผู้สูงอายุด้านจิตใจ (ลดเหงา) + ร่างกาย (เตือนยา) + ความปลอดภัย (แจ้งเตือนครอบครัว) โดยไม่ต้องติดตั้ง App ใด ๆ
+❤️
+ลดความเหงา
+💊
+ลดการลืมยา
+🛡️
+เพิ่มความปลอดภัย
+🤝
+ครอบครัวอุ่นใจ
+🎯
+จุดยืนหลัก:  ระบบนี้ไม่ใช่แค่ Health Tracker และไม่ใช่ Chatbot ธรรมดา — แต่เป็น Digital Companion ที่สร้างความสัมพันธ์ระยะยาวกับผู้ใช้ เหมือนมีลูกหลานดูแลตลอด 24 ชั่วโมง
+⚠️
+ข้อจำกัดสำคัญ (ต้องสื่อสารกับทีม):  AI ไม่ใช่แพทย์ ไม่วินิจฉัยโรค ไม่ให้คำแนะนำทางการแพทย์ ระบบให้ข้อสังเกตเชิงพฤติกรรมเท่านั้น และแจ้งให้ครอบครัวตัดสินใจเอง
+1. ผู้ใช้งาน (User Roles)
+Role
+คือใคร
+ใช้งานยังไง
+Platform
+ระดับ Tech Skill
+👴 ผู้สูงอายุ
+(Primary User)
+อายุ 60+ ปี ที่ใช้ LINE อยู่แล้ว
+คุยกับ AI ผ่านแชท LINE ปกติ
+ตอบ quick reply / ส่งข้อความ
+LINE App
+ต่ำ — ต้องเรียบง่ายมาก
+👨‍👩‍👧 ครอบครัว/ผู้ดูแล
+(Secondary User)
+ลูกหลาน คนในบ้าน
+อาจอยู่ห่าง
+รับ push alert ใน LINE
+ดู dashboard (Phase 2+)
+LINE + Web LIFF
+ปานกลาง
+🏥 ผู้ดูแลระบบ
+(Admin — Future)
+พยาบาล/เจ้าหน้าที่
+องค์กร (B2B)
+จัดการ user, protocol
+ดู analytics
+Web Dashboard
+สูง
+💡
+UX Rule #1 สำหรับทีม:  ผู้สูงอายุต้องไม่รู้สึกว่ากำลัง "ใช้เทคโนโลยี" แต่ต้องรู้สึกว่ากำลัง "คุยกับเพื่อน" ทุก UI decision ต้องวัดด้วยเกณฑ์นี้ก่อน
+2. สถาปัตยกรรมระบบ (System Architecture)
+2.1 Big Picture — 4 ชั้น
+SYSTEM ARCHITECTURE OVERVIEW
+👴  ผู้สูงอายุ
+→  ส่ง/รับข้อความ LINE
+LINE Official Account (User Interface)
+📡  LINE Messaging API
+→  HTTPS Webhook (ส่ง events ทุกข้อความ)
+Firebase Cloud Functions (Webhook Handler)
+⚙️  Core Processing Layer
+→  Process intent + emotion + risk
+Namo Nexus AI Engine + Risk Scoring Engine
+🗄️  Data Layer
+→  Read/Write user state + logs
+Firebase Firestore (Real-time NoSQL DB)
+🔔  Output Layer
+→  Push LINE message + alerts
+LINE Push API → ผู้สูงอายุ + ครอบครัว
+2.2 Technology Stack
+Layer
+Technology
+เหตุผลที่เลือก
+Version
+Frontend
+LINE Official Account + Messaging API
+ผู้สูงอายุใช้ LINE อยู่แล้ว — Zero friction
+Latest Stable
+Webhook + Functions
+Firebase Cloud Functions (Node.js/TypeScript)
+Serverless, auto-scale, integrate กับ Firestore ได้ทันที
+Gen 2
+Database
+Firebase Firestore
+Real-time, NoSQL, offline support, เชื่อมง่าย
+Latest
+AI Engine
+Namo Nexus API (Primary LLM)
+Thai language support, emotional AI
+API v1
+Fallback LLM
+OpenAI GPT-4o / Claude 3.5
+Backup + ใช้สำหรับ summarization task
+Latest
+Cache
+Upstash Redis (Serverless)
+Response caching, session state ชั่วคราว
+Free tier
+Dashboard (P2)
+React + LINE LIFF
+เปิดใน LINE ได้เลย ไม่ต้องติดตั้ง App แยก
+React 18
+Voice (P3)
+Raspberry Pi + pyttsx3 + SpeechRecognition
+Hardware gateway เชื่อม backend เดิม
+Pi Zero 2W
+2.3 Infrastructure Diagram — Production Setup
+🌐 LINE Platform
+Messaging API
+Webhook endpoint
+Push message API
+Rich menu (caregiver)
+🔥 Firebase
+Cloud Functions (8 functions)
+Firestore DB
+Authentication
+Cloud Scheduler
+🧠 AI Services
+Namo Nexus (primary)
+Fallback LLM API
+Emotion Analysis
+Memory Compression
+3. ฟีเจอร์ระบบ — Core vs Optional
+3.1 Phase 1 — Core Features (Must Build First)
+✅
+Phase 1 Scope:  5 ฟีเจอร์นี้คือ Minimum Viable Product ต้องทำให้ครบก่อน launch กับ real users ทุกอย่างใน Phase 2 และ 3 build ต่อจากนี้
+Feature 1: AI Companion Chat — เพื่อนคุยประจำวัน
+ระบบส่งทักทายทุกเช้า และตอบสนองทุกข้อความจากผู้ใช้ด้วย AI ที่อบอุ่น จำบริบท และปรับตามบุคลิกผู้ใช้
+ความสามารถ
+รายละเอียด
+Proactive Morning Greeting
+ส่งทักทาย 07:00 น. ทุกวัน พร้อม quick reply: 😊 สบายดี / 😐 พอไหว / 😔 ไม่ค่อยสบาย
+Reactive Chat
+ตอบสนองข้อความทุกชนิดด้วย AI — ฟัง เล่า ถาม อย่างเป็นธรรมชาติ
+Memory-Aware Response
+อ้างอิงสิ่งที่เล่าไว้ก่อนหน้า เช่น "เมื่อวานบอกว่าหลานมาเยี่ยม — วันนี้เป็นยังไงบ้างคะ?"
+Emotion-Adaptive Tone
+ตรวจจับอารมณ์จากข้อความ → ปรับ tone อัตโนมัติ (รับฟัง/ให้กำลังใจ/สนุก)
+Evening Check-in
+ส่ง check-in 20:00 น. ถามอารมณ์และสิ่งที่ทำในวันนั้น
+Feature 2: Medication Reminder — เตือนยาแบบโต้ตอบ
+ไม่ใช่แค่เตือนแล้วจบ แต่รอการยืนยัน และมี follow-up อัตโนมัติถ้าไม่ตอบ
+Step
+Action
+Timeout
+Next Action
+1. Remind
+ส่ง Flex Message พร้อมปุ่ม ✅ กินแล้ว / ⏰ เตือนอีก 15 นาที
+15 นาที
+Follow-up #1
+2. Follow-up #1
+ข้อความอ่อนโยน "ยังไม่ลืมนะคะ 💊"
+15 นาที
+Follow-up #2
+3. Follow-up #2
+ถามตรงขึ้น พร้อมปุ่ม ✅ / ❓ ยังไม่ได้กิน
+15 นาที
+Alert caregiver
+4. Alert
+Push ไปครอบครัว: "คุณแม่ยังไม่ยืนยันกินยา [ชื่อยา] เวลา [X] น."
+—
+Log as missed
+Feature 3: Daily Safety Check-in — เช็กความปลอดภัย
+Trigger
+ระบบทำอะไร
+ถ้าไม่ตอบ
+07:00 Morning Greeting
+ส่งคำถาม wellness + quick reply
+Midday gentle nudge
+20:00 Evening Check-in
+ถามสรุปวันและอารมณ์
+หลัง 1h → ส่ง gentle nudge ครั้งเดียว
+Inactivity Watch (ทุก 30 นาที)
+ตรวจว่าเกิน threshold หรือยัง
+เกิน X ชม → แจ้ง caregiver ทันที
+Feature 4: Family Alert System — แจ้งเตือนครอบครัว
+Alert Type
+Trigger Condition
+Severity
+Channel
+SLA
+🚨 Emergency
+พบ keyword ฉุกเฉิน (ช่วยด้วย, หัวใจ, ล้มลง)
+CRITICAL
+LINE Push ทันที
+< 3 วินาที
+🔴 No Response
+ไม่ตอบ X ชม. (ตามค่า threshold ผู้ใช้)
+HIGH
+LINE Push
+< 30 นาที
+🟠 Medication Missed
+ขาดยา 3+ ครั้ง follow-up แล้วไม่ตอบ
+MEDIUM
+LINE Push
+< 45 นาที
+🟡 Emotion Alert
+อารมณ์ลบ 3 วันติดต่อกัน
+LOW
+Daily Summary
+รายวัน
+Feature 5: Memory System — AI จำผู้ใช้ได้
+Memory Layer
+เก็บอะไร
+TTL
+ใช้เพื่ออะไร
+Working Memory
+(Session)
+บทสนทนาล่าสุด 6 turn, state ปัจจุบัน
+24 ชั่วโมง
+ต่อบทสนทนาไม่สะดุด
+Episodic Memory
+(Short-term)
+เหตุการณ์สำคัญ เช่น "หลานมาเยี่ยม", "ปวดเข่า"
+30 วัน
+อ้างอิงเหตุการณ์ธรรมชาติ
+Semantic Memory
+(Long-term)
+บุคลิก, งานอดิเรก, ครอบครัว, baseline พฤติกรรม
+ถาวร
+รู้จักผู้ใช้เหมือนคนใกล้ชิด
+3.2 Phase 2 — Enhanced Features (หลัง Launch 3 เดือน)
+Feature
+รายละเอียด
+Dependency
+Risk Scoring Engine
+คำนวณ 0–100 จาก 5 มิติ: silence, emotion, medication, check-in, communication
+Phase 1 data ≥ 30 วัน
+Behavioral Prediction
+คาดการณ์ความเสี่ยง 7 วันล่วงหน้าด้วย rule-based model
+Risk Scoring ready
+Memory Compression
+Nightly compression L1→L2→L3 ลด token 85%
+≥ 100 active users
+Care Dashboard (LIFF)
+React mini-app เปิดใน LINE แสดง emotion timeline, medication heatmap
+Firestore data
+Weekly Report
+Auto-generate รายงานส่งครอบครัวทุกวันจันทร์
+Phase 1 features
+3.3 Phase 3 — Advanced (ปีที่ 2)
+Feature
+รายละเอียด
+Voice Device (Raspberry Pi)
+Hardware gateway กดปุ่มเดียวคุยได้ เชื่อม backend เดิม
+Multi-Companion Router
+3 โหมด: Emotional / Health / Cognitive ปรับอัตโนมัติ
+Enterprise API (Hospital)
+API สำหรับโรงพยาบาล — post-discharge follow-up
+Smartwatch Integration (Optional)
+Apple HealthKit / Google Fit เพิ่ม activity + HR data
+LSTM Prediction Model
+Machine learning เมื่อมีข้อมูล 5,000+ users 6+ เดือน
+4. System Flow — การทำงานทีละขั้น
+4.1 Main Message Processing Flow
+ทุกข้อความที่ผู้ใช้ส่งผ่าน LINE จะผ่านขั้นตอนนี้เสมอ (< 3 วินาที target)
+1
+รับ Webhook Event จาก LINE
+LINE ส่ง POST ไปยัง Firebase Cloud Function endpoint ทันทีที่ผู้ใช้ส่งข้อความ ระบบ verify LINE signature ก่อนทุกครั้ง จากนั้น respond 200 OK ทันที (LINE timeout = 30s)
+2
+Emergency Detection (First Check)
+ตรวจสอบ keyword ฉุกเฉินทั้งไทยและอังกฤษ ถ้า match → ส่งข้อความ crisis ให้ผู้ใช้ทันที + push alert ครอบครัวทุกคน + log alert record → END (bypass AI)
+3
+Load Context (Parallel)
+โหลด Session State, User Memory (L1+L2+L3 compressed), Risk Score ปัจจุบัน ทำแบบ parallel Promise.all() เพื่อลด latency
+4
+AI Analysis
+ส่งข้อความ + context ไปยัง Namo Nexus API วิเคราะห์: Emotion (label + confidence score), Intent (ประเภทของข้อความ), Keywords สำคัญ
+5
+Companion Mode Routing
+เลือก mode ที่เหมาะสม: Emotional (รับฟัง) / Health (ยา/routine) / Cognitive (กิจกรรมสมอง) ตาม time-of-day + risk state + intent
+6
+Response Generation
+Build system prompt จาก memory + persona + risk level → call Namo Nexus → validate response (safety check 5 layers) → simplify ถ้ายาวเกิน
+7
+Reply to User
+ส่ง reply message ผ่าน LINE replyToken (หรือ pushMessage ถ้า reply expired) พร้อม rich menu / quick reply ถ้าเหมาะสม
+8
+Persist + Risk Update (Async)
+บันทึก conversation log, update lastActiveAt, update session state, อัปเดต memory (ถ้าพบ significant event), คำนวณ risk score ใหม่ — ทำ async ไม่บล็อก response
+4.2 Scheduled Flows (Background Jobs)
+Job Name
+Schedule
+ทำอะไร
+Cloud Function
+Medication Reminder
+ทุกนาที */*/*/
+ตรวจตาราง medication ที่ถึงเวลา → ส่ง Flex Message + สร้าง pending log
+medicationReminder
+Morning Greeting
+07:00 น. ทุกวัน
+ส่งทักทายเช้าให้ users ทุกคน (staggered 10 นาที)
+morningCheckin
+Evening Check-in
+20:00 น. ทุกวัน
+ส่ง wellness check พร้อม quick reply
+eveningCheckin
+Inactivity Watch
+ทุก 30 นาที
+ตรวจ lastActiveAt vs threshold → alert ถ้าเกิน
+inactivityCheck
+Memory Compression
+02:00 น. ทุกวัน
+Compress L1→L2 summaries, update L3 patterns, prune old logs
+nightlyCompression
+Daily Summary
+21:00 น. ทุกวัน
+Generate + ส่ง daily summary ให้ caregiver ทุกคน
+dailySummary
+Weekly Report
+09:00 จันทร์
+Generate รายงานสัปดาห์ส่งครอบครัว
+weeklyReport
+Risk Scoring
+ทุก 30 นาที
+คำนวณ risk score ทุก active user → update Firestore
+riskScorer
+5. โครงสร้างข้อมูล (Data Architecture)
+5.1 Firestore Collections Map
+Collection
+Primary Key
+เก็บอะไร
+TTL
+Indexed Fields
+users
+{userId}
+Profile, settings, lastActiveAt, riskScore, wellbeingScore
+ถาวร
+status, lastActiveAt
+userMemory
+{userId}
+Semantic memory L3: personality, familyMap, behavioral baseline
+ถาวร
+userId, updatedAt
+memorySummaries
+{userId}_{date}
+Daily L2 summaries: emotional trend, health flags, topics
+30 วัน
+userId, date, expiresAt
+memoryPatterns
+{userId}
+L3 patterns: lonelyEvening, avgMood, recurringFlags, trends
+ถาวร
+userId, updatedAt
+conversationLogs
+{msgId}
+ข้อความ user+assistant พร้อม emotion/intent analysis
+7 วัน
+userId, role, date, timestamp
+sessions
+{userId}
+Working memory: state, pendingMed, lastIntent, turnCount
+24 ชม.
+userId, expiresAt
+medications
+{medId}
+ตาราง medication ของผู้ใช้
+ถาวร (active)
+userId, active, times, daysOfWeek
+medicationLogs
+{logId}
+บันทึกการกิน/ขาดยาแต่ละมื้อ
+90 วัน
+userId, scheduledDate, status
+checkIns
+{checkInId}
+บันทึก daily check-in responses
+60 วัน
+userId, date, response.status
+alerts
+{alertId}
+Alert records พร้อม acknowledged status
+180 วัน
+userId, type, triggeredAt
+episodicMemory
+/{userId}/episodes
+{episodeId}
+เหตุการณ์สำคัญสั้น-กลาง term
+30 วัน
+importance, date, expiresAt
+caregivers
+{caregiverId}
+Profile ผู้ดูแล + linked users + alert preferences
+ถาวร
+linkedUserIds
+predictionResults
+{userId}_{date}
+ผล risk prediction รายวัน
+14 วัน
+userId, date, riskForecast
+5.2 Critical Data Fields — users collection
+users/{userId} — Key Fields
+userId, displayName, lineUserId, caregiverIds[], timezone, language
+status: "active" | "inactive" | "paused"
+lastActiveAt: Timestamp   ← ใช้ทุก inactivity calculation
+settings: { morningGreetTime, eveningCheckTime, inactivityThresholdHours, language }
+riskScore: { current: 0-100, level, dimensions{}, triggers[], computedAt }
+wellbeingScore: { current: 0-100, trend: "rising|stable|declining", updatedAt }
+profile: { age, medicalNotes (non-medical), emergencyPhone }
+5.3 Security Rules — Firestore
+Who
+Can Read
+Can Write
+Cloud Functions (Admin SDK)
+Everything
+Everything
+Elderly User (Client)
+Own profile (users/{uid})
+Never (CF only)
+Caregiver (Client)
+Linked user summaries, alerts
+alerts.acknowledged only
+Public / Unauth
+Nothing
+Nothing
+6. AI Layer Design
+6.1 AI Call Architecture
+AI Task
+Model
+Input
+Output
+Avg Latency
+Cost Tier
+Response Generation
+Namo Nexus (primary)
+System prompt + history (compressed)
+Thai text response
+1.5–3s
+High
+Emotion Analysis
+Namo Nexus / lightweight model
+User message text
+emotion label + score
+0.3–0.8s
+Low
+Intent Detection
+Namo Nexus / classifier
+User message + context
+intent name + keywords
+0.3–0.8s
+Low
+Daily Summary (L2)
+Cheap LLM (GPT-3.5-turbo / Haiku)
+Raw messages concatenated
+1–2 sentence summary
+1–2s
+Very Low
+Emergency Detection
+Rule-based (NO AI call)
+Keyword list match
+Boolean
+< 10ms
+Zero
+Safety Validation
+Rule-based (NO AI call)
+Response text + patterns
+Pass/Fail + fixed response
+< 5ms
+Zero
+6.2 Prompt Architecture — System Prompt Structure
+System prompt ถูก build ทุก turn จาก memory ที่ดึงมาจาก Firestore แบ่งเป็น 8 sections:
+Section
+เนื้อหา
+Token Budget
+Required?
+Role Declaration
+น้องนาโม คือใคร, พูดภาษาไทย, ไม่วินิจฉัยโรค
+~50 tokens
+✅ Always
+User Identity
+ชื่อ, งานอดิเรก, ครอบครัว, occupation_history
+~80 tokens
+✅ Always
+Communication Style
+formalityLevel, verbosity, humorResponse, avoidWords
+~60 tokens
+✅ Always
+Current Risk State
+riskScore.level + tone directive ตาม state
+~30 tokens
+✅ Always
+Companion Mode Hint
+mode ปัจจุบัน (emotional/health/cognitive) + opener style
+~40 tokens
+✅ Always
+Episodic Memory
+Top 3–5 recent episodes (importance ≥ 0.7)
+~150 tokens
+Conditional
+Compressed History (L2)
+Last 4 daily summaries
+~120 tokens
+✅ Always
+Golden Rules
+ห้ามถาม 2 คำถาม, ไม่วินิจฉัย, ใช้ emoji ที่ชอบ
+~50 tokens
+✅ Always
+📏
+Token Budget:  System Prompt รวม ~580 tokens + Conversation History (L1 last 6 turns) ~300 tokens = รวม ~880 tokens ต่อ call ลดจาก naive 8,000+ tokens ถึง 89%
+6.3 Safety Validation — 5 Layers (Before Every Response)
+Layer
+ตรวจสอบ
+ถ้า Fail
+Skip ถ้า
+1. Medical Claim
+Pattern: "เป็นโรค", "วินิจฉัย", "ควรกินยา" (ที่ไม่ใช่ยาที่กำหนด)
+Replace กับ safe medical template
+—
+2. Distress Amplifier
+Response ทำให้ sentiment แย่ลงเมื่อ user ดู sad/anxious
+Rephrase ด้วย compassion template
+User emotion = happy/neutral
+3. Emergency Resource
+User message มี self-harm keyword
+Inject hotline 1323 ต่อท้าย response
+ทุกกรณีต้องผ่าน
+4. Length Guard
+ประโยค > 80 chars หรือ response > 200 chars
+Simplify: ตัด + แบ่งประโยค
+—
+5. Human Review Flag
+Violation ≥ 2 ใน 1 response
+Log ไว้ให้ admin review ใน dashboard
+—
+7. Risk Engine — วิธีคิดคะแนนความเสี่ยง
+Risk Score คือตัวเลข 0–100 คำนวณทุก 30 นาที จาก 5 มิติ เพื่อตัดสินใจว่าต้องทำอะไรกับผู้ใช้คนนี้
+7.1 Scoring Formula
+Dimension
+Max Score
+คำนวณจาก
+Threshold แจ้งเตือน
+Silence Score
+30
+ชั่วโมงที่ไม่มีข้อความ vs. baseline ของผู้ใช้นั้น
+≥ 20 คะแนน
+Emotion Distress
+25
+วันที่มี emotion negative ติดต่อกัน + ratio ใน 24h
+≥ 18 คะแนน
+Medication Non-adherence
+20
+จำนวนมื้อที่ขาดใน 7 วัน + consecutive missed days
+≥ 14 คะแนน
+Check-in Avoidance
+15
+วัน no-response check-in ติดต่อกัน
+≥ 10 คะแนน
+Communication Decline
+10
+จำนวน message vs. baseline ลดลง %
+≥ 7 คะแนน
+TOTAL
+100
+Weighted sum
+≥ 50 = trigger alert
+7.2 Risk Level Actions
+Score
+Level
+Check Freq
+AI Tone
+Caregiver Action
+0–24
+🟢 SAFE
+30 min
+Normal — warm and steady
+Weekly summary only
+25–49
+🟡 WATCH
+15 min
+Extra warm, gentle probing open questions
+Flag ใน daily summary สีเหลือง
+50–69
+🟠 ALERT
+5 min
+Compassionate, prioritize emotional support
+Push alert ทันที + detail
+70–100
+🔴 CRITICAL
+1 min
+Crisis support mode, keep engaged
+Alert ทุกคนใน caregiverIds + emergency contact
+8. Conversation UX Guidelines — ออกแบบ AI ให้ผู้สูงอายุใช้ได้
+8.1 Golden Rules of Elderly UX
+Rule
+รายละเอียด
+ตัวอย่างการ apply
+ประโยคสั้น
+ไม่เกิน 20 คำต่อประโยค แบ่งหลายบรรทัดถ้าจำเป็น
+"สวัสดีค่ะ 🌸
+วันนี้เป็นยังไงบ้างคะ?" ✅
+"วันนี้อากาศร้อนมากเลยนะคะหนูเป็นห่วงเลยอยากถามว่าเป็นยังไงบ้าง" ❌
+คำถามเดียวต่อข้อความ
+อย่าถาม 2 คำถามในข้อความเดียวกัน
+"ยาเช้ากินแล้วหรือยังคะ?" ✅
+"กินยาแล้วยัง แล้วก็กินข้าวด้วยมั้ยคะ?" ❌
+Quick Reply ทุกครั้งที่ทำได้
+ลดการพิมพ์ให้เหลือน้อยที่สุด ใช้ปุ่มกดแทน
+3 ตัวเลือกสูงสุดต่อ quick reply
+Emoji เสริม ไม่ใช่หลัก
+Emoji ทำให้อบอุ่น แต่ต้องอ่านออกโดยไม่มี
+ใช้ 1–2 ตัวต่อข้อความ จากรายการที่ผู้ใช้ชอบ
+ไม่ใช้ศัพท์เทคนิค
+หลีกเลี่ยงคำยากหรือทับศัพท์อังกฤษ
+บอก "หนูส่งข่าวให้ลูกสาวแล้วนะคะ" แทน "แจ้งเตือน caregiver แล้ว"
+จบด้วย "ค่ะ" เสมอ
+ให้ความรู้สึกสุภาพอบอุ่น
+ทุกประโยคที่ AI พูดลงท้ายด้วย ค่ะ
+ไม่กดดัน
+ถ้าผู้ใช้ไม่ตอบ อย่า spam — รอแล้วถามอีกครั้งอ่อนโยน
+Nudge สูงสุด 2 ครั้งต่อ session
+8.2 Message Flow Templates — สำหรับ Dev Team
+Morning Greeting Template
+AI ส่งให้ผู้ใช้
+ผู้ใช้ตอบ
+สวัสดีตอนเช้าค่ะ {displayName} 🌸
+วันนี้รู้สึกเป็นยังไงบ้างคะ?
+[Quick Reply]
+😊 สบายดี  |  😐 พอไหว  |  😔 ไม่ค่อยสบาย
+{ผู้ใช้เลือก Quick Reply หรือพิมพ์เอง}
+ถ้า 😊: "ดีใจมากเลยค่ะ 💛
+วันนี้มีแผนทำอะไรบ้างคะ?"
+
+ถ้า 😐: "ขอบคุณที่บอกนะคะ 💛
+มีอะไรอยากเล่าให้หนูฟังมั้ยคะ?"
+
+ถ้า 😔: "หนูเป็นห่วงนะคะ 💙
+พักผ่อนหลับพอมั้ยคะ?"
+→ Open conversation
+→ Log wellbeing
+→ ถ้า 😔: flag emotion watch
+Medication Reminder Template (Flex Message)
+Flex Message Content
+Logic
+🔔 ถึงเวลากินยาแล้วนะคะ {displayName}
+
+💊 {medName}  —  {dosage}
+⏰ เวลา {scheduledTime} น.
+
+[Button] ✅ กินแล้วค่ะ
+[Button] ⏰ เตือนอีก 15 นาที
+Create medicationLogs doc: status="pending"
+Update session.state = "medication_confirm"
+Set pendingLogId in session
+User กด ✅:
+"เยี่ยมเลยค่ะ 🌟 บันทึกไว้ให้เรียบร้อยแล้วนะคะ ❤️"
+
+User กด ⏰:
+"โอเคค่ะ หนูจะเตือนใหม่อีก 15 นาทีนะคะ 💛"
+
+Timeout 15 นาที:
+ส่ง follow-up #1 (อ่อนโยน)
+Update log: status="taken" or reschedule
+If missed after 2 follow-ups:
+→ alert caregiver
+→ log: status="missed"
+9. API Contracts — Interface Definitions
+9.1 Cloud Functions — Public Endpoints
+Function Name
+Method
+Trigger
+Input
+Output
+Auth
+lineWebhook
+POST
+/lineWebhook
+LINE Webhook Event payload
+200 OK (immediate)
+LINE Signature
+voiceGateway
+POST
+/voiceGateway
+{ deviceToken, message, source }
+{ responseText, responseForTTS }
+Device Token
+registerUser
+POST
+/registerUser
+{ lineUserId, caregiverLineIds[] }
+{ userId, success }
+LINE OAuth
+getCaregiverDashboard
+GET
+/dashboard/{userId}
+— (JWT auth)
+Dashboard data JSON
+Firebase JWT
+acknowledgeAlert
+POST
+/acknowledgeAlert
+{ alertId, caregiverId }
+{ success }
+Firebase JWT
+9.2 Namo Nexus AI API — Contract
+Endpoint
+Input
+Output
+Timeout
+Fallback
+/analyze/emotion
+{ text: string }
+{ label, score, sentiment }
+3s
+Return "neutral" + score 0.5
+/analyze/intent
+{ text, context }
+{ name, confidence, keywords[] }
+3s
+Return "general_chat"
+/chat/completions
+{ systemPrompt, messages[], model }
+{ response: string }
+10s
+Use fallback LLM
+/summarize
+{ prompt, maxTokens }
+{ summary: string }
+8s
+Use fallback LLM
+9.3 LINE API — Key Methods Used
+Method
+ใช้เมื่อไหร่
+Quota
+Notes
+replyMessage
+ตอบข้อความที่ user ส่งมา
+Free (ใช้ replyToken)
+replyToken หมดอายุ 30 วินาที
+pushMessage
+Proactive messages, alerts, reminders
+ขึ้นกับ plan (Free=500/เดือน)
+ต้องใช้ userId
+getProfile
+ดึง displayName ตอน register
+Free
+—
+setRichMenu
+ตั้ง persistent menu ให้ผู้ใช้
+Free
+ตั้งครั้งเดียว
+broadcast
+ส่งถึง users ทุกคน (admin only)
+ขึ้นกับ plan
+ใช้เฉพาะ announcement
+10. Build Plan — แผนการพัฒนา
+10.1 Sprint Breakdown — Phase 1 (12 สัปดาห์)
+Sprint
+สัปดาห์
+งานหลัก
+Deliverable
+Definition of Done
+S1 — Foundation
+1–2
+Setup Firebase project
+LINE OA + Webhook endpoint
+Firestore schema + rules
+Basic auth flow
+Webhook รับและ log ข้อความได้
+User register ได้
+LINE Webhook verified, Firestore read/write OK
+S2 — AI Core
+3–4
+Namo Nexus API integration
+Emotion + Intent analysis
+Basic response generation
+Conversation logging
+AI ตอบข้อความด้วย Thai text
+Response ใน < 5s, emotion label ถูกต้อง > 80%
+S3 — Memory
+5–6
+Session state (Working Memory)
+Episodic memory write
+Context injection ใน prompt
+Semantic memory schema
+AI จำชื่อและสิ่งที่เล่าในวันเดียวกัน
+Memory persist ข้าม conversation ได้
+S4 — Medication
+7–8
+Medication CRUD + scheduler
+Flex Message reminder
+Confirmation flow
+Missed detection
+ส่งเตือนยา + log การกิน/ขาด
+Medication flow complete end-to-end
+S5 — Safety
+9–10
+Emergency keyword detection
+Family alert push
+Inactivity watcher
+Risk scoring (basic)
+แจ้งเตือนครอบครัวเมื่อ trigger
+Emergency response < 5s, false positive < 20%
+S6 — Polish
+11–12
+Morning/Evening greeting scheduler
+Safety validation (5 layers)
+Daily summary
+Onboarding flow
+Internal testing
+MVP complete
+All Phase 1 features working, 0 critical bugs
+10.2 Environment Setup
+Environment
+ใช้สำหรับ
+Firebase Project
+LINE Account
+URL
+Development
+Dev + Unit Test
+namo-care-dev
+LINE Sandbox OA
+localhost / ngrok
+Staging
+Integration Test + QA
+namo-care-staging
+Staging LINE OA
+staging.namo.care
+Production
+Live Users
+namo-care-prod
+Production LINE OA
+api.namo.care
+10.3 Definition of Done — Phase 1 Exit Gate
+Metric
+Target
+วิธีวัด
+Response Latency
+< 5 วินาที 95th percentile
+Firebase Functions logs
+Emergency Detection Speed
+< 3 วินาที
+Manual test 20 keyword variants
+Morning Greeting Delivery
+100% ถึงผู้ใช้ active
+Cloud Function success rate
+Medication Reminder Accuracy
+ตรงเวลา ±2 นาที
+Log comparison
+Caregiver Alert Delivery
+100% ภายใน SLA
+Alert log audit
+Conversation Naturalness
+≥ 3.5/5 จาก internal review
+Blind rating โดยทีม 5 คน
+False Alert Rate (Internal Test)
+< 30% (Phase 1 threshold)
+Manual review 100 simulated alerts
+11. Team Roles & Handoff Checklist
+11.1 Recommended Team Structure
+Role
+Headcount
+ความรับผิดชอบ
+Skills Required
+Backend Developer
+1–2 คน
+Firebase Functions, Firestore, LINE API, Risk Engine, Scheduler
+Node.js/TypeScript, Firebase, REST API
+AI Engineer / Prompt Engineer
+1 คน
+Prompt design, Memory pipeline, Namo Nexus integration, Safety validation
+LLM, Prompt engineering, Python (for compression)
+Frontend Developer
+1 คน (Phase 2+)
+LINE Rich Menu, LIFF Dashboard, React
+React, LINE LIFF SDK
+QA / Tester
+1 คน
+Test conversation flows, Alert accuracy, Edge cases, User testing with elderly
+Manual QA, Basic automation
+Product Owner
+1 คน
+User stories, Acceptance criteria, Stakeholder communication
+Thai elderly UX understanding
+11.2 Pre-Development Handoff Checklist
+📋
+ทีมต้องมีสิ่งเหล่านี้ก่อนเขียนโค้ด:  ตรวจสอบ checklist ด้านล่างให้ครบก่อน Sprint 1
+Accounts & Access
+LINE Official Account — สร้าง + ตั้ง Webhook URL
+LINE Messaging API — Channel Access Token + Channel Secret
+Firebase Project — สร้าง project + enable Firestore + Functions
+Namo Nexus API Key — ขอ access + test endpoint
+Fallback LLM (OpenAI / Anthropic) — API Key สำรอง
+Upstash Redis — สร้าง free account (session cache)
+Configurations
+firebase.json + .firebaserc ตั้งค่า project alias (dev/staging/prod)
+Environment variables — สร้าง .env.dev, .env.staging, .env.prod
+Firestore Security Rules — copy จาก Section 5 ของเอกสารนี้
+Firestore Indexes — สร้าง composite indexes ตามที่ระบุ
+LINE Rich Menu — ออกแบบ + upload สำหรับ elderly user
+Repository Structure
+Monorepo: /functions (CF), /dashboard (React LIFF), /scripts (utility)
+TypeScript strict mode enabled
+ESLint + Prettier configured
+Git branching: main → staging → dev / feature branches
+CI/CD: Firebase Hosting + Functions auto-deploy on merge
+Testing
+Unit test setup: Jest + firebase-functions-test
+Integration test: LINE Simulator or test account
+Load test plan: simulate 100 concurrent morning greetings
+Manual test script: ครอบคลุม all conversation paths
+11.3 Knowledge Transfer Requirements
+เอกสาร / Artifact
+เนื้อหา
+Responsible
+Technical Spec (เอกสารนี้)
+Architecture, Schema, Flow, API Contracts
+Product Owner → Dev Team
+Prompt Templates
+System prompt base, tone guidelines, avoidWords list
+AI Engineer
+Firestore Schema
+Collection structures, index definitions, security rules
+Backend Dev
+Conversation Scripts
+ตัวอย่างบทสนทนาทุก flow (Morning, Med, Checkin, Emergency)
+Product Owner
+Risk Scoring Spec
+Formula, thresholds, action matrix
+Backend Dev
+UX Guidelines
+Elderly UX rules, message templates, emoji guidelines
+Product Owner
+API Keys & Credentials
+Stored in Firebase Secrets + lastpass/1Password
+Tech Lead
+12. Constraints, Risks & Mitigations
+12.1 Technical Constraints
+Constraint
+ผลกระทบ
+Mitigation
+LINE replyToken expires in 30s
+ต้องตอบภายใน 30s หรือใช้ pushMessage แทน
+Respond 200 ทันที, process async, ใช้ pushMessage ถ้า reply failed
+Firebase Free Plan limit
+ขีดจำกัด invocations + Firestore reads
+ใช้ Blaze plan ตั้งแต่ต้น, ตั้ง budget alert
+Namo Nexus API Latency
+LLM อาจช้า 3–8s ช่วง peak
+Timeout + fallback LLM, Cache frequent intents
+LINE Push Quota (Free)
+จำกัด 500 messages/เดือน Free plan
+Upgrade plan ก่อน launch real users
+Context Window Limit
+ถ้า history ยาวเกิน → cost สูง + คุณภาพลด
+3-tier memory compression (Section 6)
+12.2 Operational Risks
+Risk
+Likelihood
+Impact
+Mitigation
+AI ให้ข้อมูลทางการแพทย์ผิด
+Medium
+High
+Safety Layer Layer 1 (Medical Claim Detector) + disclaimer ทุก response
+False Emergency Alert (สูง)
+Medium
+Medium
+Tune keyword list, Require confidence ≥ 2 signals, Allow caregiver to dismiss
+ผู้สูงอายุ confused ว่า AI คือคนจริง
+Low
+High
+Onboarding flow อธิบายชัดว่า AI คืออะไร, AI intro message ระบุ
+Data Privacy (PDPA)
+—
+Critical
+Encrypt PII, ไม่เก็บข้อมูลสุขภาพจริง, แจ้ง consent ก่อนใช้
+LINE API Changes
+Low
+High
+Abstract LINE SDK ออกเป็น service layer — ง่ายต่อการเปลี่ยน
+AI Dependency (Namo Nexus Down)
+Low
+High
+Fallback LLM (OpenAI/Claude) + hardcoded emergency responses
+สรุปสำหรับทีม
+สิ่งที่ทีมต้องจำเสมอ
+1. ผู้ใช้ของเราคือผู้สูงอายุ — ความเรียบง่ายมาก่อนความฉลาด
+2. ระบบนี้ไม่ใช่แพทย์ — ทุก response ต้องผ่าน Safety Validation
+3. Memory คือหัวใจ — AI ที่ "จำ" ทำให้ผู้ใช้รู้สึกมีคุณค่า
+4. False alert คือศัตรู — ทุก alert ที่ false ทำลายความเชื่อมั่นครอบครัว
+5. Build Phase 1 ให้ดีก่อน — แล้วค่อยขยายสู่ Phase 2 และ 3
+ระบบที่ดีที่สุดคือระบบที่มีคนอยากเปิดใช้งานทุกวัน
+NaMo Care Companion  ·  Technical Handoff v1.0  ·  Build with ❤️ for Thai Elderly

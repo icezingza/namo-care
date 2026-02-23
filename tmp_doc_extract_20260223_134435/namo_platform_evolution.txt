@@ -1,0 +1,1308 @@
+﻿NaMo Care Companion
+Platform Evolution Blueprint
+Volume III — Intelligence · Scale · Future Architecture
+10 Advanced Systems: Memory Compression · Prediction · Orchestration · Multi-Companion · Voice · Dashboard · Enterprise · AI Safety · 100K Scale · Platform Vision
+1️⃣  Memory Compression
+2️⃣  Behavioral Prediction
+3️⃣  Care Orchestration
+4️⃣  Multi-Companion
+5️⃣  Voice-First Device
+6️⃣  Care Dashboard
+7️⃣  Enterprise Model
+8️⃣  AI Safety Layer
+9️⃣  100K Users Scale Strategy
+🔟  Platform Evolution Vision
+1️⃣
+Memory Compression Model
+ลดต้นทุน Token 70–85% โดยไม่เสียบริบท
+ปัญหาหลัก: การเก็บบทสนทนาดิบทุก turn ทำให้ token พุ่งสูงเร็วมาก สำหรับผู้ใช้ที่คุยวันละ 10+ ข้อความ ใน 30 วันจะมีข้อความ 300+ ชิ้น ซึ่งเกิน context window ของ LLM ส่วนใหญ่
+1.1 Three-Level Compression Architecture
+Level
+Storage
+TTL
+Format
+L1 — Raw
+Firestore
+7 วัน → auto-delete
+ข้อความเต็ม + metadata (emotion, intent, timestamp)
+L2 — Summary
+Firestore
+30 วัน
+Daily JSON summary: emotional_trend, health_flags, topics
+L3 — Pattern
+Firestore
+Permanent
+Boolean/numeric patterns: lonely_evening=true, missed_med_freq=3
+1.2 Compression Pipeline — Cloud Function
+// functions/src/memory/compressionPipeline.ts
+// Runs nightly at 02:00 Asia/Bangkok via Cloud Scheduler
+import * as admin from "firebase-admin";
+import { subDays } from "date-fns";
+import { formatInTimeZone } from "date-fns-tz";
+import { namoNexus } from "../ai/namoNexus";
+export async function runNightlyCompression() {
+const db = admin.firestore();
+const yesterday = formatInTimeZone(subDays(new Date(),1),"Asia/Bangkok","yyyy-MM-dd");
+const usersSnap = await db.collection("users").where("status","==","active").get();
+await Promise.all(usersSnap.docs.map(d => compressUserDay(d.id, yesterday)));
+}
+async function compressUserDay(userId: string, date: string) {
+const db = admin.firestore();
+// ─── Step 1: Fetch yesterday's raw L1 logs ──────────────────
+const rawSnap = await db.collection("conversationLogs")
+.where("userId","==",userId)
+.where("role","==","user")
+.where("date","==",date)
+.orderBy("timestamp").get();
+if (rawSnap.empty) return;
+const messages = rawSnap.docs.map(d => ({
+text: d.data().message,
+emotion: d.data().analysis?.emotion || "neutral",
+emotionScore: d.data().analysis?.emotionScore || 0,
+timestamp: d.data().timestamp?.toDate(),
+intent: d.data().analysis?.intent,
+}));
+// ─── Step 2: Compress to L2 Summary ─────────────────────────
+const l2Summary = await generateL2Summary(messages, userId, date);
+await db.collection("memorySummaries").doc(`${userId}_${date}`).set(l2Summary);
+// ─── Step 3: Extract/update L3 Patterns ─────────────────────
+await updateL3Patterns(userId, l2Summary);
+// ─── Step 4: Prune L1 older than 7 days ─────────────────────
+const pruneDate = formatInTimeZone(subDays(new Date(),7),"Asia/Bangkok","yyyy-MM-dd");
+const oldLogs = await db.collection("conversationLogs")
+.where("userId","==",userId)
+.where("date","<",pruneDate)
+.limit(200).get();
+const batch = db.batch();
+oldLogs.docs.forEach(d => batch.delete(d.ref));
+await batch.commit();
+}
+// ─── L2: AI-powered daily summary ─────────────────────────────
+async function generateL2Summary(messages: any[], userId: string, date: string) {
+const emotionScores = messages.map(m => m.emotionScore *
+(["sad","anxious","angry"].includes(m.emotion) ? -1 : 1));
+const emotionalTrend = emotionScores.reduce((a,b)=>a+b,0) / emotionScores.length;
+// Use AI to generate narrative summary (cheap — single call per user per day)
+const msgTexts = messages.map(m => m.text).join(" | ").slice(0, 2000);
+const aiSummary = await namoNexus.summarize({
+prompt: `Summarize in 1–2 sentences what this elderly user talked about today.
+Be specific about emotional state, topics, and concerns mentioned.
+Messages: ${msgTexts}`,
+maxTokens: 120,
+});
+// Extract health flags from messages
+const healthKeywords = ["เจ็บ","ปวด","ไม่สบาย","เวียนหัว","คลื่นไส้","หายใจ","เข่า","หลัง","อ่อนเพลีย"];
+const healthFlags = healthKeywords.filter(kw =>
+messages.some(m => m.text.includes(kw))
+);
+// Extract relationship mentions
+const topics = [...new Set(messages.flatMap(m => m.intent?.topics || []))];
+return {
+summaryId: `${userId}_${date}`,
+userId, date,
+messageCount: messages.length,
+summary: aiSummary,
+emotionalTrend,                          // -1 (very negative) to +1 (very positive)
+dominantEmotion: getDominantEmotion(messages),
+healthFlags,                             // behavioral flags only
+topics,
+firstMessageTime: messages[0]?.timestamp?.toTimeString().slice(0,5),
+lastMessageTime:  messages[messages.length-1]?.timestamp?.toTimeString().slice(0,5),
+medicationDays: getMedStatus(messages),
+createdAt: admin.firestore.FieldValue.serverTimestamp(),
+expiresAt: admin.firestore.Timestamp.fromDate(
+new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
+),
+};
+}
+// ─── L3: Update permanent pattern document ────────────────────
+async function updateL3Patterns(userId: string, l2: any) {
+const db = admin.firestore();
+const patternRef = db.doc(`/memoryPatterns/${userId}`);
+// Fetch last 14 L2 summaries to compute patterns
+const last14 = await db.collection("memorySummaries")
+.where("userId","==",userId)
+.orderBy("date","desc").limit(14).get();
+const summaries = last14.docs.map(d => d.data());
+const emotionalTrends = summaries.map(s => s.emotionalTrend);
+const avgMood = emotionalTrends.reduce((a,b)=>a+b,0) / emotionalTrends.length;
+// Detect evening loneliness pattern
+const eveningMessages = summaries.filter(s => s.lastMessageTime >= "18:00");
+const lonelyEvenings = eveningMessages.filter(s => s.emotionalTrend < -0.2).length;
+// Recurring health mentions
+const allFlags = summaries.flatMap(s => s.healthFlags || []);
+const flagFreq: Record<string,number> = {};
+allFlags.forEach(f => flagFreq[f] = (flagFreq[f]||0) + 1);
+const recurringFlags = Object.entries(flagFreq)
+.filter(([,n]) => n >= 3)
+.map(([f]) => f);
+await patternRef.set({
+userId,
+updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+// Behavioral patterns (Boolean)
+lonelyEveningPattern: lonelyEvenings >= 3,
+morningPerson: summaries.filter(s=>s.firstMessageTime<"09:00").length >= 10,
+weekendActive: isWeekendMoreActive(summaries),
+consistentMoodDrop: detectMoodDropPattern(emotionalTrends),
+// Numeric baselines
+avgMoodScore:        parseFloat(avgMood.toFixed(3)),
+avgDailyMessages:    summaries.reduce((a,s)=>a+s.messageCount,0)/summaries.length,
+recurringHealthFlags: recurringFlags,
+// Trend signals
+moodTrend7d: computeTrend(emotionalTrends.slice(0,7)),   // "rising"|"stable"|"falling"
+engagementTrend7d: computeEngagementTrend(summaries.slice(0,7)),
+}, {merge: true});
+}
+function computeTrend(scores: number[]): "rising"|"stable"|"falling" {
+if (scores.length < 3) return "stable";
+const first = scores.slice(-3).reduce((a,b)=>a+b)/3;
+const last  = scores.slice(0,3).reduce((a,b)=>a+b)/3;
+if (last - first > 0.15) return "rising";
+if (first - last > 0.15) return "falling";
+return "stable";
+}
+1.3 Prompt Context Builder — Injecting Compressed Memory
+// functions/src/memory/contextBuilder.ts
+// Builds < 800 tokens of context from 3 memory levels
+export async function buildCompressedContext(userId: string): Promise<string> {
+const db = admin.firestore();
+// ── Pull 3 levels in parallel ─────────────────────────────
+const [l1Snap, l2Snap, l3Doc] = await Promise.all([
+db.collection("conversationLogs").where("userId","==",userId)
+.orderBy("timestamp","desc").limit(6).get(),           // Last 6 messages (L1)
+db.collection("memorySummaries").where("userId","==",userId)
+.orderBy("date","desc").limit(7).get(),                // Last 7 daily summaries (L2)
+db.doc(`/memoryPatterns/${userId}`).get(),              // Permanent patterns (L3)
+]);
+const l1 = l1Snap.docs.reverse()
+.map(d => `[${d.data().role}]: ${d.data().message}`).join("\n");
+const l2 = l2Snap.docs.slice(0,4)
+.map(d => `[${d.data().date}] ${d.data().summary} (mood:${d.data().emotionalTrend?.toFixed(2)})`)
+.join("\n");
+const l3 = l3Doc.data() || {};
+const patterns = [
+l3.lonelyEveningPattern && "มักเหงาช่วงเย็น",
+l3.recurringHealthFlags?.length && `บ่นเรื่อง ${l3.recurringHealthFlags.join(",")} บ่อยๆ`,
+l3.consistentMoodDrop && "อารมณ์มักตกช่วงเย็น",
+l3.moodTrend7d === "falling" && "⚠️ อารมณ์แย่ลงต่อเนื่อง 7 วัน",
+].filter(Boolean).join(" | ");
+return `
+=== RECENT CONVERSATION (L1 — last 6 turns) ===
+${l1}
+=== WEEKLY SUMMARIES (L2 — last 4 days) ===
+${l2}
+=== LONG-TERM PATTERNS (L3 — permanent) ===
+${patterns || "ไม่มีรูปแบบพิเศษที่ตรวจพบ"}
+`.trim();
+// ── Token estimate: ~500–700 tokens ──
+}
+💰
+SAVINGS
+Token reduction: ส่ง raw 100 messages = ~8,000 tokens | ส่ง L1+L2+L3 compressed = ~650 tokens → ประหยัด 91% ต่อ API call และยังได้บริบทครบกว่าเดิม
+2️⃣
+Behavioral Prediction Model
+คาดการณ์ความเสี่ยงล่วงหน้า 7 วันก่อนเกิดปัญหา
+ระบบ prediction เปลี่ยน NaMo จาก "reactive" เป็น "proactive" — แทนที่จะรอให้ผู้ใช้เงียบ 8 ชั่วโมงแล้วค่อยแจ้ง ระบบ detect drift ที่เริ่มสะสมตั้งแต่วันที่ 2–3 และ intervene ก่อนที่จะถึงจุดวิกฤต
+2.1 Feature Engineering — Input Variables
+Feature
+คำนวณจาก
+Type
+Window
+engagement_slope
+msg count per day (linear regression)
+float -1 to 1
+7d
+sentiment_drift
+avg emotional_trend delta per day
+float
+5d
+med_miss_streak
+consecutive days with missed dose
+int 0–7
+7d
+response_delay_delta
+avg reply time vs. baseline
+float (minutes)
+3d
+checkin_avoidance_rate
+no-response checkins / total
+float 0–1
+7d
+silence_episodes_count
+silence > threshold per day
+int
+7d
+topic_diversity_decline
+unique topics today vs. 7d avg
+float delta
+7d
+night_message_spike
+messages sent 22:00–05:00
+bool
+3d
+2.2 Prediction Models — Three Tiers
+Tier A — Rule-based (Deploy Day 1, Zero Training Data)
+// functions/src/prediction/ruleBased.ts
+export interface PredictionResult {
+riskForecast:  "low" | "moderate" | "high";
+daysToRisk:    number;          // estimated days until critical
+confidence:    number;          // 0–1
+interventions: string[];        // recommended actions
+reasons:       string[];
+}
+export function ruleBasedPrediction(features: FeatureVector): PredictionResult {
+let score = 0;
+const reasons: string[] = [];
+const interventions: string[] = [];
+// ── Rule 1: Engagement collapse ─────────────────────────
+if (features.engagement_slope < -0.3) {
+score += 30;
+reasons.push("การส่งข้อความลดลงต่อเนื่อง 3+ วัน");
+interventions.push("increase_morning_greeting_warmth");
+}
+// ── Rule 2: Compound sad + medication ───────────────────
+if (features.sentiment_drift < -0.2 && features.med_miss_streak >= 2) {
+score += 35;
+reasons.push("อารมณ์แย่ลงพร้อมกับขาดยา — รูปแบบเสี่ยงสูง");
+interventions.push("notify_caregiver_soft", "increase_checkin_frequency");
+}
+// ── Rule 3: Response delay spike ────────────────────────
+if (features.response_delay_delta > 15) {  // 15+ min slower than baseline
+score += 20;
+reasons.push("ตอบช้าลงมากกว่าปกติ");
+interventions.push("send_gentle_nudge");
+}
+// ── Rule 4: Social withdrawal combo ─────────────────────
+if (features.checkin_avoidance_rate > 0.6 &&
+features.topic_diversity_decline < -0.4) {
+score += 25;
+reasons.push("หลีกเลี่ยง check-in + พูดเรื่องหลากหลายน้อยลง — สัญญาณถอนตัว");
+interventions.push("trigger_caregiver_call_suggestion");
+}
+// ── Rule 5: Night anxiety signal ────────────────────────
+if (features.night_message_spike) {
+score += 15;
+reasons.push("ส่งข้อความดึก — อาจนอนไม่หลับหรือวิตกกังวล");
+interventions.push("morning_compassion_opener");
+}
+const riskForecast = score >= 60 ? "high" : score >= 35 ? "moderate" : "low";
+const daysToRisk = score >= 60 ? 1 : score >= 35 ? 3 : 7;
+return { riskForecast, daysToRisk, confidence: 0.72, reasons, interventions };
+}
+Tier B — Logistic Regression (Deploy at 500+ users, 60+ days data)
+// functions/src/prediction/logisticRegression.ts
+// Train offline with Python/scikit-learn → deploy coefficients here
+const COEFFICIENTS = {
+intercept:               -2.1,
+engagement_slope:        -3.4,   // negative = more predictive of risk
+sentiment_drift:         -4.1,
+med_miss_streak:          2.8,
+response_delay_delta:     0.12,
+checkin_avoidance_rate:   3.6,
+silence_episodes_count:   1.9,
+topic_diversity_decline: -2.3,
+night_message_spike:      2.1,
+};
+export function logisticRegressionPredict(features: FeatureVector): number {
+// Compute linear combination
+let z = COEFFICIENTS.intercept;
+z += COEFFICIENTS.engagement_slope        * features.engagement_slope;
+z += COEFFICIENTS.sentiment_drift         * features.sentiment_drift;
+z += COEFFICIENTS.med_miss_streak         * features.med_miss_streak;
+z += COEFFICIENTS.response_delay_delta    * features.response_delay_delta;
+z += COEFFICIENTS.checkin_avoidance_rate  * features.checkin_avoidance_rate;
+z += COEFFICIENTS.silence_episodes_count  * features.silence_episodes_count;
+z += COEFFICIENTS.topic_diversity_decline * features.topic_diversity_decline;
+z += COEFFICIENTS.night_message_spike     * (features.night_message_spike ? 1 : 0);
+// Sigmoid → probability of high-risk event in next 7 days
+return 1 / (1 + Math.exp(-z));
+}
+// Retrain monthly via Python job:
+// from sklearn.linear_model import LogisticRegression
+// model.fit(X_train, y_train)  # y = 1 if crisis occurred within 7 days
+// → export coefficients → update COEFFICIENTS above
+Tier C — LSTM Time-Series (Deploy at 5,000+ users, 6+ months data)
+# Python training script (run in GCP Vertex AI monthly)
+# functions/ml/train_lstm.py
+import tensorflow as tf
+from tensorflow.keras import layers
+def build_lstm_model(seq_length=14, feature_count=8):
+"""
+Input:  (batch, 14 days, 8 features) — rolling 2-week window
+Output: risk probability for next 7 days
+"""
+model = tf.keras.Sequential([
+layers.Input(shape=(seq_length, feature_count)),
+layers.LSTM(64, return_sequences=True, dropout=0.2),
+layers.LSTM(32, dropout=0.2),
+layers.Dense(16, activation='relu'),
+layers.Dropout(0.3),
+layers.Dense(1, activation='sigmoid'),  # P(crisis in 7 days)
+])
+model.compile(
+optimizer='adam',
+loss='binary_crossentropy',
+metrics=['AUC', 'Precision', 'Recall']
+)
+return model
+# After training: export to TensorFlow.js for Cloud Functions
+# tensorflowjs_converter --input_format keras model.h5 ./tfjs_model
+3️⃣
+Care Orchestration Engine
+ผู้จัดการการดูแลอัตโนมัติ — ปรับพฤติกรรมระบบแบบ Dynamic
+Care Orchestration Engine (COE) คือชั้น logic ที่อยู่เหนือ risk scoring และ prediction โดย COE รับ signal จากทั้งสองระบบแล้วตัดสินใจ "ทำอะไร ตอนไหน มากแค่ไหน" แทนที่จะ hardcode behavior
+3.1 Orchestration State Machine
+State
+Trigger
+Check-in Freq
+AI Tone
+Caregiver
+🟢 THRIVING
+risk<20, mood rising
+1x/day
+Upbeat, curious
+Weekly summary only
+🔵 STABLE
+risk<20, flat
+1x/day
+Warm, steady
+Weekly summary
+🟡 WATCH
+risk 20–45, drift signal
+2x/day
+Extra warm, open Q
+Flag in daily report
+🟠 ALERT
+risk 45–70, prediction>0.5
+Every 3h
+Compassionate, check-in focused
+Immediate soft alert
+🔴 CRISIS
+risk>70 or emergency kw
+Every 30min
+Crisis support mode
+All caregivers — urgent
+3.2 Orchestration Engine Implementation
+// functions/src/orchestration/orchestrationEngine.ts
+import { computeRiskScore } from "../risk/riskScorer";
+import { ruleBasedPrediction } from "../prediction/ruleBased";
+import { extractFeatureVector } from "../prediction/featureExtractor";
+import { updateSessionState, getUserMemory } from "../services/firestoreService";
+import { dispatchAlert } from "../notifications/alertDispatcher";
+export type OrchestrationState =
+"THRIVING" | "STABLE" | "WATCH" | "ALERT" | "CRISIS";
+export interface OrchestrationPlan {
+state:              OrchestrationState;
+checkinIntervalMin: number;
+aiToneDirective:    string;
+proactiveActions:   string[];
+caregiverAction:    "none" | "daily_summary" | "soft_alert" | "urgent_alert";
+nextEvalMin:        number;
+}
+export async function runOrchestration(userId: string): Promise<OrchestrationPlan> {
+// ── Gather all signals ───────────────────────────────────
+const [riskScore, features, memory] = await Promise.all([
+computeRiskScore(userId),
+extractFeatureVector(userId),
+getUserMemory(userId),
+]);
+const prediction = ruleBasedPrediction(features);
+// ── Determine state ──────────────────────────────────────
+let state: OrchestrationState;
+if (riskScore.total >= 70 || riskScore.level === "critical") state = "CRISIS";
+else if (riskScore.total >= 45 || prediction.riskForecast === "high") state = "ALERT";
+else if (riskScore.total >= 20 || prediction.riskForecast === "moderate") state = "WATCH";
+else if (memory.wellbeingTrend === "rising") state = "THRIVING";
+else state = "STABLE";
+// ── Build action plan ────────────────────────────────────
+const plan = buildPlan(state, riskScore, prediction, memory);
+// ── Execute plan ─────────────────────────────────────────
+await executePlan(userId, plan, riskScore);
+// ── Persist state to Firestore ───────────────────────────
+await updateSessionState(userId, {
+orchestrationState:    state,
+orchestrationPlan:     plan,
+lastOrchestrationRun:  new Date(),
+nextOrchestrationRun:  new Date(Date.now() + plan.nextEvalMin * 60000),
+});
+return plan;
+}
+function buildPlan(
+state: OrchestrationState,
+risk: any, prediction: any, memory: any
+): OrchestrationPlan {
+const BASE_PLANS: Record<OrchestrationState, OrchestrationPlan> = {
+THRIVING: {
+state: "THRIVING", checkinIntervalMin: 1440,       // once/day
+aiToneDirective: "be upbeat, ask about hobbies and family, celebrate small wins",
+proactiveActions: ["morning_greeting"],
+caregiverAction: "none", nextEvalMin: 60,
+},
+STABLE: {
+state: "STABLE", checkinIntervalMin: 1440,
+aiToneDirective: "warm and steady, reference recent memories naturally",
+proactiveActions: ["morning_greeting", "evening_checkin"],
+caregiverAction: "daily_summary", nextEvalMin: 60,
+},
+WATCH: {
+state: "WATCH", checkinIntervalMin: 720,           // twice/day
+aiToneDirective: "extra warm, ask open-ended questions about feelings, avoid pushing",
+proactiveActions: ["morning_greeting", "afternoon_checkin", "evening_checkin"],
+caregiverAction: "daily_summary", nextEvalMin: 30,
+},
+ALERT: {
+state: "ALERT", checkinIntervalMin: 180,           // every 3h
+aiToneDirective: "compassionate, prioritize emotional support over tasks, gentle probing",
+proactiveActions: ["morning_greeting", "midday_checkin", "afternoon_checkin", "evening_checkin"],
+caregiverAction: "soft_alert", nextEvalMin: 15,
+},
+CRISIS: {
+state: "CRISIS", checkinIntervalMin: 30,
+aiToneDirective: "calm, reassuring, crisis support mode — do not leave long pauses",
+proactiveActions: ["immediate_checkin", "periodic_reassurance"],
+caregiverAction: "urgent_alert", nextEvalMin: 5,
+},
+};
+const plan = { ...BASE_PLANS[state] };
+// ── Dynamic tone modifiers ───────────────────────────────
+if (memory.personality?.responseToSadness === "needs_distraction" && state === "WATCH") {
+plan.aiToneDirective += ". When sad, gently redirect to positive topics like hobbies.";
+}
+if (prediction.interventions.includes("morning_compassion_opener")) {
+plan.proactiveActions.push("morning_compassion_opener");
+}
+return plan;
+}
+async function executePlan(userId: string, plan: OrchestrationPlan, risk: any) {
+if (plan.caregiverAction === "urgent_alert" || plan.caregiverAction === "soft_alert") {
+await dispatchAlert(userId, {
+type: plan.caregiverAction === "urgent_alert" ? "emergency" : "behavioral_watch",
+severity: plan.caregiverAction === "urgent_alert" ? "critical" : "medium",
+riskScore: risk.total,
+triggers: risk.triggers,
+});
+}
+}
+4️⃣
+Multi-Companion Architecture
+AI หลายบุคลิก ปรับตามความต้องการแต่ละวัน
+แทนที่จะมี AI บุคลิกเดียวที่พยายามทำทุกอย่าง ระบบ Multi-Companion แยก AI ออกเป็น 3 Mode ที่มีบุคลิก ทักษะ และจุดประสงค์ต่างกัน โดยสลับอัตโนมัติตาม context หรือให้ผู้ใช้เลือก
+4.1 Companion Modes
+Mode
+ชื่อ AI
+จุดประสงค์หลัก
+Trigger Conditions
+Avoided Topics
+Mode A
+น้องนาโม
+(Emotional)
+ฟัง เยียวยา ลดความเหงา
+riskScore.emotion > 15, ผู้ใช้พูดถึงความรู้สึก
+ยา อาการ task-like
+Mode B
+พี่นาโม
+(Health)
+ยา routine ติดตามอาการ
+เวลายา, มีการพูดถึงอาการ, ช่วง morning
+เรื่องลบ, จบสนทนาเร็ว
+Mode C
+ครูนาโม
+(Cognitive)
+brain games, ความจำ, กระตุ้นสมอง
+afternoon slot, user engaged, orchState=THRIVING
+อาการ, ข่าวร้าย
+4.2 Companion Router Implementation
+// functions/src/companions/companionRouter.ts
+export type CompanionMode = "emotional" | "health" | "cognitive";
+export interface CompanionContext {
+mode:        CompanionMode;
+persona:     CompanionPersona;
+systemHint:  string;
+}
+const PERSONAS: Record<CompanionMode, CompanionPersona> = {
+emotional: {
+name: "น้องนาโม", emoji: "🌸",
+voice: "อ่อนโยน รับฟัง ไม่ตัดสิน",
+openers: [
+"วันนี้รู้สึกยังไงบ้างคะ คุณแม่? 💛",
+"มีอะไรอยากเล่าให้หนูฟังมั้ยคะ? 🌸",
+"หนูอยู่ที่นี่นะคะ เล่าให้ฟังได้เลยค่ะ",
+],
+closingStyle: "remind user they are not alone",
+avoidPatterns: ["กินยา", "ตรวจสอบ", "รายงาน"],
+},
+health: {
+name: "พี่นาโม", emoji: "💊",
+voice: "ชัดเจน ให้กำลังใจ task-oriented แต่อบอุ่น",
+openers: [
+"สวัสดีค่ะ ถึงเวลาดูแลสุขภาพแล้วนะคะ 💊",
+"วันนี้กินยาครบมั้ยคะ? เช็กด้วยกันเลยนะคะ",
+"พี่แวะมาดูแลสุขภาพคุณแม่ค่ะ 🌿",
+],
+closingStyle: "confirm action completed and celebrate adherence",
+avoidPatterns: ["เศร้า", "เหงา", "คิดถึง"],
+},
+cognitive: {
+name: "ครูนาโม", emoji: "🧩",
+voice: "สนุก กระตือรือร้น ท้าทายอย่างอ่อนโยน",
+openers: [
+"พร้อมเล่นเกมสมองด้วยกันมั้ยคะ? 🧩",
+"วันนี้ครูนาโมมีปริศนาสนุกๆ มาฝากค่ะ! ✨",
+"มาฝึกความจำกันหน่อยนะคะ สนุกมากเลยค่ะ 🌟",
+],
+closingStyle: "celebrate achievement and tease next challenge",
+avoidPatterns: ["เจ็บป่วย", "ยา", "ห่วงใย"],
+},
+};
+export async function routeToCompanion(
+userId: string,
+message: string,
+context: {orchestrationState: string, currentHour: number, sessionState: string}
+): Promise<CompanionContext> {
+// ── 1. Check if user explicitly requests mode ────────────
+if (message.includes("อยากคุย") || message.includes("เหงา") || message.includes("เศร้า")) {
+return buildContext("emotional", "user expressed emotional need");
+}
+if (message.includes("ยา") || message.includes("กิน") || message.includes("อาการ")) {
+return buildContext("health", "health-related message");
+}
+if (message.includes("เกม") || message.includes("ทาย") || message.includes("ปริศนา")) {
+return buildContext("cognitive", "user requested cognitive engagement");
+}
+// ── 2. Time-based routing ─────────────────────────────────
+if (context.currentHour >= 7 && context.currentHour <= 9) {
+return buildContext("health", "morning medication window");
+}
+if (context.currentHour >= 14 && context.currentHour <= 16 &&
+context.orchestrationState === "THRIVING") {
+return buildContext("cognitive", "afternoon cognitive window + thriving state");
+}
+if (context.currentHour >= 19) {
+return buildContext("emotional", "evening — higher loneliness risk");
+}
+// ── 3. Risk-based override ────────────────────────────────
+if (["ALERT","CRISIS"].includes(context.orchestrationState)) {
+return buildContext("emotional", "high risk state — emotional support priority");
+}
+// ── 4. Default to emotional for warmth ────────────────────
+return buildContext("emotional", "default");
+}
+function buildContext(mode: CompanionMode, reason: string): CompanionContext {
+const persona = PERSONAS[mode];
+return {
+mode, persona,
+systemHint: `You are now in ${mode.toUpperCase()} mode (${persona.name}).
+Voice: ${persona.voice}
+Reason for this mode: ${reason}
+Opening style: ${persona.openers[Math.floor(Math.random()*persona.openers.length)]}
+Closing style: ${persona.closingStyle}
+Avoid these patterns: ${persona.avoidPatterns.join(", ")}`,
+};
+}
+5️⃣
+Voice-First Future Device
+กล่องเล็กๆ ในบ้าน — กดปุ่มเดียว คุยได้ทันที
+Voice device คือ hardware endpoint ที่เชื่อมต่อกับ backend LINE/Firebase เดิมโดยไม่ต้องสร้าง backend ใหม่ เพียงเพิ่ม voice gateway layer ที่แปลง speech → text และ text → speech
+5.1 Hardware Architecture
+Component
+Recommended
+Cost/unit
+Notes
+MCU
+Raspberry Pi Zero 2W
+~$15
+WiFi built-in, Linux capable
+Microphone
+ReSpeaker 2-Mic HAT
+~$12
+Noise cancellation, far-field
+Speaker
+3W USB Speaker
+~$5
+Small form factor
+Button
+Large tactile button 40mm
+~$2
+Elderly-friendly, single action
+Enclosure
+3D printed ABS shell
+~$8
+Cute friendly design, non-scary
+Power
+5V USB-C adapter
+~$5
+Always-on recommended
+TOTAL
+~$47/unit
++ assembly and shipping
+5.2 Voice Gateway Architecture
+# Voice Gateway — runs on Raspberry Pi
+# voice_gateway/main.py
+import asyncio
+import pyaudio
+import speech_recognition as sr
+import requests
+import pyttsx3
+import RPi.GPIO as GPIO
+from pathlib import Path
+BUTTON_PIN  = 18
+LINE_API_URL = "https://us-central1-namo-care.cloudfunctions.net/voiceGateway"
+DEVICE_TOKEN = "device_xxx_userId_Uxxx"   # registered device token
+class NamoVoiceDevice:
+def __init__(self):
+self.recognizer  = sr.Recognizer()
+self.tts_engine  = pyttsx3.init()
+self.configure_tts()
+self.setup_button()
+def configure_tts(self):
+# Slower speed for elderly users
+self.tts_engine.setProperty('rate', 130)      # default ~200
+self.tts_engine.setProperty('volume', 0.9)
+# Use Thai voice if available: 'th-TH-PremwadeeNeural' (Azure) or piper-TH
+voices = self.tts_engine.getProperty('voices')
+for v in voices:
+if 'thai' in v.name.lower() or 'th' in v.id.lower():
+self.tts_engine.setProperty('voice', v.id)
+break
+def setup_button(self):
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.add_event_detect(BUTTON_PIN, GPIO.FALLING,
+callback=self.on_button_press, bouncetime=500)
+def on_button_press(self, channel):
+self.play_beep("listening")
+text = self.listen_for_speech()
+if text:
+response = self.send_to_namo(text)
+self.speak(response)
+else:
+self.speak("หนูไม่ได้ยินชัดเจนค่ะ ลองพูดใหม่อีกครั้งนะคะ")
+def listen_for_speech(self) -> str | None:
+with sr.Microphone() as source:
+self.recognizer.adjust_for_ambient_noise(source, duration=0.3)
+try:
+audio = self.recognizer.listen(source, timeout=8, phrase_time_limit=15)
+text  = self.recognizer.recognize_google(audio, language="th-TH")
+print(f"Heard: {text}")
+return text
+except (sr.WaitTimeoutError, sr.UnknownValueError):
+return None
+def send_to_namo(self, text: str) -> str:
+try:
+res = requests.post(LINE_API_URL, json={
+"deviceToken": DEVICE_TOKEN,
+"message": text,
+"source": "voice_device",
+}, timeout=15)
+return res.json().get("responseText", "ขอโทษค่ะ มีปัญหาชั่วคราว")
+except Exception as e:
+return "ขอโทษค่ะ เชื่อมต่อไม่ได้ตอนนี้ค่ะ"
+def speak(self, text: str):
+self.tts_engine.say(text)
+self.tts_engine.runAndWait()
+def play_beep(self, sound_type: str):
+import subprocess
+sounds = {"listening": "/sounds/beep_start.wav",
+"thinking":  "/sounds/beep_process.wav"}
+subprocess.run(["aplay", sounds.get(sound_type,"")], capture_output=True)
+if __name__ == "__main__":
+device = NamoVoiceDevice()
+print("NaMo Voice Device ready. Press button to speak.")
+asyncio.get_event_loop().run_forever()
+5.3 Voice Gateway Cloud Function
+// functions/src/voice/voiceGateway.ts
+// Bridges voice device to existing LINE/AI pipeline
+export const voiceGateway = onRequest(async (req, res) => {
+const { deviceToken, message, source } = req.body;
+// Validate device token → get userId
+const deviceDoc = await db.collection("voiceDevices")
+.where("token","==",deviceToken).limit(1).get();
+if (deviceDoc.empty) { res.status(401).json({error:"invalid device"}); return; }
+const { userId } = deviceDoc.docs[0].data();
+// Process through same pipeline as LINE messages
+const session   = await getOrCreateSession(userId);
+const isEmergency = await detectEmergency(userId, message, null);
+let responseText: string;
+if (isEmergency) {
+responseText = MESSAGES.EMERGENCY_USER_RESPONSE(userId);
+} else {
+const [emotion, intent] = await Promise.all([
+analyzeEmotion(message), detectIntent(message, session.context)
+]);
+responseText = await generateResponse({ userId, message, emotion, intent, session,
+source: "voice_device" });  // AI knows to keep response under 2 sentences
+// Log same as LINE message
+await logConversation({ userId, role:"user", message, emotion, intent,
+metadata:{ source:"voice_device" } });
+await logConversation({ userId, role:"assistant", message:responseText });
+}
+// Return text for TTS
+res.json({
+responseText,
+responseForTTS: prepareForTTS(responseText),  // Remove emoji, shorten
+});
+});
+function prepareForTTS(text: string): string {
+return text
+.replace(/[🌸💛🌺☕💊🔔😊😐😔🚨⚠️✅]/gu, "")  // remove emoji
+.replace(/
++/g, " ")
+.trim()
+.slice(0, 200);  // TTS max 200 chars (voice should be short)
+}
+6️⃣
+AI Care Dashboard
+Visual dashboard สำหรับครอบครัว — LINE LIFF + React
+Dashboard แสดงข้อมูล real-time ของผู้สูงอายุในรูปแบบ visual ที่อ่านง่าย โดยสร้างเป็น LINE LIFF mini-app (เปิดใน LINE ได้เลย ไม่ต้องติดตั้ง app แยก)
+6.1 Dashboard Components
+Widget
+แสดงอะไร
+Data Source
+Refresh
+Wellbeing Gauge
+คะแนน 0–100 พร้อม trend arrow
+riskScore collection
+Real-time
+Emotion Timeline
+กราฟ 7 วัน: 😊😐😔 per day
+memorySummaries L2
+Daily
+Medication Heatmap
+ปฏิทิน: สีเขียว=กิน, แดง=ขาด
+medicationLogs
+Real-time
+Activity Pulse
+ชั่วโมงที่ active มากที่สุดใน 7 วัน
+conversationLogs
+Daily
+Risk Forecast
+bar chart 7 วันข้างหน้า จาก prediction model
+predictionResults
+Every 6h
+Alert Timeline
+รายการ alert พร้อม acknowledged status
+alerts collection
+Real-time
+6.2 React LIFF Dashboard — Core Implementation
+// dashboard/src/App.tsx (LINE LIFF React App)
+import { useEffect, useState } from "react";
+import liff from "@line/liff";
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, onSnapshot, collection, query, where, orderBy, limit } from "firebase/firestore";
+const LIFF_ID = "your-liff-id";
+export default function CaregiverDashboard() {
+const [userId, setUserId]         = useState<string | null>(null);
+const [riskData, setRiskData]     = useState<any>(null);
+const [emotions, setEmotions]     = useState<any[]>([]);
+const [medLogs, setMedLogs]       = useState<any[]>([]);
+const [alerts, setAlerts]         = useState<any[]>([]);
+const [prediction, setPrediction] = useState<any>(null);
+useEffect(() => {
+initializeLiff();
+}, []);
+async function initializeLiff() {
+await liff.init({ liffId: LIFF_ID });
+const profile = await liff.getProfile();
+const linkedUserId = await getLinkedElderly(profile.userId);
+setUserId(linkedUserId);
+subscribeToData(linkedUserId);
+}
+function subscribeToData(uid: string) {
+const db = getFirestore();
+// Real-time risk score
+onSnapshot(doc(db,"users",uid), snap => setRiskData(snap.data()?.riskScore));
+// Last 7 days emotion summaries
+const q7d = query(
+collection(db,"memorySummaries"),
+where("userId","==",uid),
+orderBy("date","desc"), limit(7)
+);
+onSnapshot(q7d, snap =>
+setEmotions(snap.docs.map(d=>d.data()).sort((a,b)=>a.date.localeCompare(b.date)))
+);
+// Medication logs last 14 days
+const qMed = query(
+collection(db,"medicationLogs"),
+where("userId","==",uid),
+orderBy("scheduledDate","desc"), limit(28)
+);
+onSnapshot(qMed, snap => setMedLogs(snap.docs.map(d=>d.data())));
+// Recent alerts
+const qAlerts = query(
+collection(db,"alerts"),
+where("userId","==",uid),
+orderBy("triggeredAt","desc"), limit(10)
+);
+onSnapshot(qAlerts, snap => setAlerts(snap.docs.map(d=>d.data())));
+}
+return (
+<div className="dashboard">
+<Header />
+<WellbeingGauge risk={riskData} />
+<EmotionTimeline summaries={emotions} />
+<MedicationHeatmap logs={medLogs} />
+<RiskForecastBar prediction={prediction} />
+<AlertTimeline alerts={alerts} />
+</div>
+);
+}
+// ── Wellbeing Gauge Component ────────────────────────────
+function WellbeingGauge({ risk }: { risk: any }) {
+if (!risk) return <div className="loading">กำลังโหลด...</div>;
+const score = risk.current;
+const color = score >= 70 ? "#2E7D32" : score >= 40 ? "#E65100" : "#B71C1C";
+return (
+<div className="card gauge-card">
+<h3>สุขภาวะตอนนี้</h3>
+<div className="gauge" style={{color}}>
+<span className="score">{score}</span>
+<span className="max">/100</span>
+</div>
+<div className="trend">
+{risk.trend === "rising" ? "📈 ดีขึ้น" :
+risk.trend === "falling" ? "📉 แย่ลง" : "➡️ คงที่"}
+</div>
+<div className="triggers">
+{(risk.triggers || []).map((t: string, i: number) =>
+<div key={i} className="trigger-pill">{t}</div>
+)}
+</div>
+</div>
+);
+}
+// ── Emotion Timeline Component ───────────────────────────
+function EmotionTimeline({ summaries }: { summaries: any[] }) {
+return (
+<div className="card">
+<h3>อารมณ์ 7 วัน</h3>
+<div className="timeline">
+{summaries.map((s, i) => (
+<div key={i} className="day-col">
+<div className="emotion-emoji">
+{s.dominantEmotion === "happy" ? "😊" :
+s.dominantEmotion === "sad" || s.dominantEmotion === "anxious" ? "😔" : "😐"}
+</div>
+<div className="mood-bar" style={{
+height: `${Math.abs(s.emotionalTrend || 0) * 60 + 10}px`,
+background: s.emotionalTrend > 0.1 ? "#4CAF50" :
+s.emotionalTrend < -0.2 ? "#F44336" : "#2196F3",
+}}/>
+<div className="day-label">
+{new Date(s.date).toLocaleDateString("th-TH",{weekday:"short"})}
+</div>
+</div>
+))}
+</div>
+</div>
+);
+}
+7️⃣
+Enterprise & Business Model Expansion
+จาก B2C สู่ B2B Healthcare Infrastructure
+7.1 Revenue Model Architecture
+Segment
+ลูกค้า
+Value Prop
+Pricing Model
+Revenue Potential
+B2C Family
+ครอบครัว
+ดูแลผู้สูงอายุที่บ้าน
+฿299/เดือน per user
+High volume, low margin
+B2B Hospital
+โรงพยาบาล
+Post-discharge follow-up
+฿150/patient/month SLA
+Medium volume, high margin
+B2B Insurance
+ประกันชีวิต
+Risk reduction data
+API license ฿50K+/mo
+Low volume, very high margin
+B2B Community
+หมู่บ้าน/นิคม
+Community monitoring
+฿30/resident/month
+Very high volume
+Government
+อปท./สาธารณสุข
+National elder care infra
+Project-based licensing
+Strategic, low frequency
+7.2 Hospital Integration API Design
+// Enterprise API — POST-DISCHARGE FOLLOW-UP INTEGRATION
+// Hospitals connect via REST API, not LINE admin panel
+// Endpoint: POST /api/v1/enterprise/enroll-patient
+// Auth: Bearer JWT (hospital credentials)
+{
+"patientId":    "HN-12345",
+"hospitalCode": "SIRIRAJ-001",
+"firstName":    "มณี",
+"lineUserId":   "Uxxxx",            // pre-linked by hospital
+"dischargeDate":"2024-03-20",
+"followUpDays": 30,
+"careProtocol": "cardiac-recovery", // loads hospital-specific conversation protocol
+"medicationSchedule": [
+{ "name":"ยาหัวใจ", "dosage":"1 เม็ด", "times":["08:00","20:00"] }
+],
+"alertRecipients": [
+{ "role":"nurse", "lineId":"Unurse123", "alertLevel":"high" },
+{ "role":"family", "lineId":"Ufamily456", "alertLevel":"medium" }
+]
+}
+// Response: 201 Created
+{
+"enrollmentId": "enroll_xxx",
+"namoUserId":   "U_namo_xxx",
+"dashboardUrl": "https://dashboard.namo.care/patient/HN-12345",
+"webhookForUpdates": "https://namo.care/enterprise/webhook/SIRIRAJ-001"
+}
+// Enterprise-specific features:
+// - Custom care protocols (cardiac, diabetic, post-surgery, etc.)
+// - Hospital branding on messages (by แพทย์จากโรงพยาบาลศิริราช)
+// - EHR integration via HL7 FHIR for medication data
+// - Compliance reports (PDPA, ISO 27001)
+// - Dedicated support SLA
+8️⃣
+AI Safety Hardening
+Response Validation · Medical Escalation · Human Override
+Safety Layer คือชั้นที่ทำงานระหว่าง AI response generation และการส่งให้ผู้ใช้ ทุก response ต้องผ่าน 5 checkpoint ก่อน deliver
+8.1 Five-Layer Safety Validation Pipeline
+#
+Layer
+ตรวจสอบอะไร
+Action เมื่อ Fail
+1
+Medical Claim Detector
+ตรวจ keyword: วินิจฉัย, รักษา, ควรกิน(ยา), เป็นโรค
+Block + replace กับ safe template
+2
+Distress Amplifier Check
+ตรวจว่า response ทำให้อารมณ์แย่ขึ้น (sentiment delta)
+Rephrase ด้วย compassionate template
+3
+Emergency Keyword Detector
+ตรวจทั้ง input และ AI response
+Inject emergency resources
+4
+Length & Complexity Guard
+ประโยค>25 คำ, ศัพท์ยาก >3 คำ/ประโยค
+Simplify อัตโนมัติ
+5
+Personality Drift Detector
+เปรียบเทียบ tone กับ persona baseline
+Flag for human review
+8.2 Safety Validation Code
+// functions/src/safety/responseValidator.ts
+const MEDICAL_CLAIM_PATTERNS = [
+/คุณ(แม่|พ่อ)?เป็นโรค/,
+/น่าจะเป็น.{0,20}โรค/,
+/ควรกิน(?!ยาที่หมอสั่ง)/,
+/ไม่ต้องไปหาหมอ/,
+/วินิจฉัย/,
+/อาการนี้หมายความว่า/,
+];
+const SAFE_MEDICAL_REPLACEMENT =
+"หนูเป็นห่วงนะคะ เรื่องสุขภาพควรปรึกษาคุณหมอโดยตรงนะคะ 💙";
+export interface ValidationResult {
+safe:       boolean;
+finalText:  string;
+violations: string[];
+actions:    string[];
+}
+export async function validateAIResponse(
+originalResponse: string,
+userMessage: string,
+userEmotion: EmotionResult,
+): Promise<ValidationResult> {
+let text = originalResponse;
+const violations: string[] = [];
+const actions: string[] = [];
+// ── Layer 1: Medical claim detection ──────────────────────
+for (const pattern of MEDICAL_CLAIM_PATTERNS) {
+if (pattern.test(text)) {
+violations.push(`medical_claim: ${pattern}`);
+text = SAFE_MEDICAL_REPLACEMENT;
+actions.push("replaced_with_safe_medical_template");
+break;
+}
+}
+// ── Layer 2: Distress amplification check ─────────────────
+if (userEmotion.label === "sad" || userEmotion.label === "anxious") {
+const negativeWords = ["ยิ่งแย่","แย่กว่า","หนักขึ้น","ไม่ดีเลย","น่าเป็นห่วงมาก"];
+if (negativeWords.some(w => text.includes(w))) {
+violations.push("potential_distress_amplification");
+text = await rephraseWithCompassion(text);
+actions.push("rephrased_for_compassion");
+}
+}
+// ── Layer 3: Emergency resource injection ─────────────────
+const emergencySignals = ["ฆ่าตัว","อยากตาย","ไม่อยากอยู่","หมดหวัง"];
+if (emergencySignals.some(s => userMessage.includes(s) || text.includes(s))) {
+violations.push("emergency_signal_detected");
+text = `${text}\n\nถ้าต้องการความช่วยเหลือเร่งด่วนนะคะ:\n📞 กรมสุขภาพจิต: 1323 (24ชม.)`;
+actions.push("injected_emergency_resources");
+}
+// ── Layer 4: Length and complexity check ──────────────────
+const sentences = text.split(/[.!?。
+]+/).filter(s => s.trim().length > 0);
+const longSentences = sentences.filter(s => s.length > 80);
+if (longSentences.length > 0) {
+text = simplifyText(text);
+violations.push("sentences_too_long");
+actions.push("simplified_text");
+}
+// ── Layer 5: Log for human review if multiple violations ──
+if (violations.length >= 2) {
+await flagForHumanReview({
+originalResponse, finalResponse: text, violations, userMessage,
+});
+actions.push("flagged_for_human_review");
+}
+return {
+safe: violations.length === 0,
+finalText: text,
+violations, actions,
+};
+}
+// ── Human-in-the-loop override ─────────────────────────────
+// Caregivers can flag any response for review via dashboard
+// Admin team reviews flagged responses daily
+// Patterns from flags feed back into validation rules
+9️⃣
+Scale to 100,000 Users Strategy
+Message Queue · AI Batching · Context Caching · Cost Control
+เมื่อผู้ใช้ถึง 100K คน ปัญหาหลักไม่ใช่ Firebase (auto-scales) แต่คือ LLM API cost และ latency ภายใต้ peak load (07:00–09:00 ทุกคน greet พร้อมกัน) ต้องออกแบบ architecture ให้รับ spike ได้
+9.1 Load Estimation at 100K Users
+Scenario
+Messages/min
+AI Calls/min
+Cost/month (est.)
+Off-peak (02:00–06:00)
+~200
+~180
+baseline
+Normal hours (10:00–18:00)
+~1,500
+~1,200
+~$4,500
+Morning peak (07:00–09:00)
+~8,000
+~6,000
+spike — must queue
+Medication reminder wave
+~12,000/5min burst
+~10,000
+must batch+schedule stagger
+TOTAL (naive)
+—
+~60K/day
+~$18,000/month
+TOTAL (optimized)
+—
+~25K/day
+~$7,500/month (58% saving)
+9.2 Architecture for Scale — Five Optimizations
+// ─── OPTIMIZATION 1: Message Queue with Cloud Tasks ────────────────────────
+// Prevents simultaneous 12,000 AI calls during morning wave
+// functions/src/scale/messageQueue.ts
+import { CloudTasksClient } from "@google-cloud/tasks";
+const tasksClient = new CloudTasksClient();
+const QUEUE = "projects/namo-care/locations/asia-northeast1/queues/ai-queue";
+export async function enqueueAICall(userId: string, message: string, priority: "high" | "normal") {
+// High priority = emergency or medication confirm (< 5s SLA)
+// Normal = greetings, check-ins (< 30s acceptable)
+const task = {
+httpRequest: {
+httpMethod: "POST" as const,
+url: "https://asia-northeast1-namo-care.cloudfunctions.net/processMessage",
+body: Buffer.from(JSON.stringify({ userId, message })).toString("base64"),
+headers: { "Content-Type": "application/json" },
+},
+// Schedule delay to stagger morning wave
+scheduleTime: priority === "normal"
+? { seconds: Math.floor(Date.now()/1000) + Math.floor(Math.random() * 120) }  // 0–2min random
+: undefined,  // high priority: no delay
+};
+await tasksClient.createTask({ parent: QUEUE, task });
+}
+// ─── OPTIMIZATION 2: AI Response Caching ────────────────────────────────────
+// Cache identical/similar AI responses to avoid redundant LLM calls
+// functions/src/scale/responseCache.ts
+import { Redis } from "@upstash/redis";
+const redis = new Redis({
+url: process.env.UPSTASH_REDIS_URL!, token: process.env.UPSTASH_REDIS_TOKEN!
+});
+export async function getCachedResponse(
+intent: string, emotionLabel: string, timeOfDay: string
+): Promise<string | null> {
+// Cache key: intent + emotion + time slot (6 time slots/day)
+const slot = Math.floor(parseInt(timeOfDay.split(":")[0]) / 4);  // 6 slots
+const key = `response:${intent}:${emotionLabel}:slot${slot}`;
+return await redis.get<string>(key);
+}
+export async function cacheResponse(
+intent: string, emotionLabel: string, timeOfDay: string, response: string
+): Promise<void> {
+const slot = Math.floor(parseInt(timeOfDay.split(":")[0]) / 4);
+const key = `response:${intent}:${emotionLabel}:slot${slot}`;
+await redis.setex(key, 3600, response);  // 1h cache
+// Note: only cache for non-personalized intents (greetings, generic responses)
+// NEVER cache responses that reference personal memory
+}
+// ─── OPTIMIZATION 3: Medication Reminder Staggering ─────────────────────────
+// Instead of all 08:00 reminders firing at once → stagger over 10 minutes
+// In medication scheduler:
+const staggerMs = (userIndex % 600) * 1000;  // spread over 600 seconds = 10 min
+await new Promise(resolve => setTimeout(resolve, staggerMs));
+await sendMedicationReminder(userId, med);
+// ─── OPTIMIZATION 4: Tiered AI Model Routing ────────────────────────────────
+// Use fast/cheap model for simple responses, premium model for complex
+export function selectModel(intent: string, riskLevel: string): string {
+if (riskLevel === "CRISIS" || riskLevel === "ALERT") {
+return "namo-nexus-pro";     // premium model: better empathy
+}
+if (["greeting", "medication_confirm", "simple_checkin"].includes(intent)) {
+return "namo-nexus-fast";    // 3x cheaper, 2x faster, fine for simple tasks
+}
+return "namo-nexus-standard";  // default
+}
+// ─── OPTIMIZATION 5: Firestore Memory Pruning ───────────────────────────────
+// Auto-delete old data to control read costs
+// Cloud Scheduler: daily at 03:00
+export async function pruneOldData() {
+const db = admin.firestore();
+const cutoffs = {
+conversationLogs: subDays(new Date(), 7),
+medicationLogs:   subDays(new Date(), 90),
+alerts:           subDays(new Date(), 180),
+sessions:         subDays(new Date(), 1),
+};
+for (const [collection, cutoff] of Object.entries(cutoffs)) {
+const old = await db.collection(collection)
+.where("timestamp","<", admin.firestore.Timestamp.fromDate(cutoff))
+.limit(500).get();  // batch limit
+const batch = db.batch();
+old.docs.forEach(d => batch.delete(d.ref));
+await batch.commit();
+}
+}
+9.3 Cost Optimization at Scale
+Strategy
+Token Saving
+Implementation
+Impact
+Memory compression (3-tier)
+85%
+nightly compression job
+LLM cost -85%
+Response caching (intent-based)
+30%
+Redis Upstash (free tier covers 10K req/day)
+Latency -40%
+Tiered model routing
+45%
+intent classifier → route to fast/pro model
+Cost -45%
+Reminder staggering
+0% (not LLM)
+time jitter in scheduler
+Infrastructure cost -60%
+Emergency fast-path (bypass AI)
+100% for emergency
+hardcoded templates for critical alerts
+Latency -90% for emergency
+🔟
+Platform Evolution Vision
+Phase 1→4: Companion → Predictive → Autonomous → National Infrastructure
+10.1 Four-Phase Roadmap
+Phase
+Timeline
+Core System
+Key Metric
+Exit Gate
+Phase 1
+Month 1–6
+Companion Chat + Basic Alerts
+1,000 MAU, 70% retention
+Caregiver NPS ≥ 4.0
+Phase 2
+Month 7–18
+Prediction Model + Memory Compression
+10,000 MAU, <15% false alert rate
+Risk model precision ≥ 0.80
+Phase 3
+Month 19–36
+Autonomous Orchestration + Enterprise API
+50K MAU, 3+ hospital partners
+Incident prevention rate ≥ 60%
+Phase 4
+Year 4+
+National Infrastructure Partner
+100K+ MAU, government contract
+Population health integration
+10.2 Technical Maturity Milestones
+// PLATFORM MATURITY MODEL — Technical Gates per Phase
+Phase 1: Companion Chat  ✅ (Current Architecture)
+- LINE Messaging API + Firebase Firestore
+- Basic risk scoring (rule-based, 5 dimensions)
+- Manual memory (session only)
+- Caregiver alerts (push notifications)
+Success Gate: 1,000 users, 70% 30-day retention
+Phase 2: Predictive Care  🔨 (Build Now)
+- 3-tier memory compression (this document)
+- Logistic regression risk prediction
+- Care Orchestration Engine (3 states)
+- Multi-Companion router (3 modes)
+- LINE LIFF dashboard (basic)
+- 100 user test cohort for model training
+Success Gate: Risk model AUC ≥ 0.78, false alert rate < 20%
+Phase 3: Autonomous Care Assistant  📅 (18 months)
+- LSTM prediction model (requires 6+ months training data)
+- Enterprise API (hospital integration)
+- Voice gateway (Pi device v1)
+- Full LIFF dashboard with real-time updates
+- Multi-tenant architecture (hospitals/insurance)
+- PDPA compliance module
+- Automated model retraining pipeline (monthly)
+Success Gate: Hospital partner signed, 50K users, <10% false alert rate
+Phase 4: National Elder Care Infrastructure  🌐 (3+ years)
+- Government API integration (NHSO, สปสช.)
+- Federated learning (train model without sharing raw data)
+- Population-level behavioral trend analysis
+- Integration with hospital EHR systems (HL7 FHIR)
+- Multi-language: Thai + regional dialects
+- Offline-capable voice device (edge AI on device)
+Success Gate: Government partnership, national coverage pilot
+10.3 Autonomous Care Architecture (Phase 3)
+// The "Autonomous Care" concept — system makes care decisions
+// without human initiation, adapts over time
+DECISION AUTONOMY LEVELS:
+Level 0 — INFORM:    Tell caregiver, caregiver decides (current)
+Level 1 — SUGGEST:   Recommend action to caregiver ("suggest calling mom today")
+Level 2 — ACT:       Take action, notify caregiver (send check-in message automatically)
+Level 3 — ADAPT:     Continuously adjust care protocol based on outcomes (Phase 3)
+AUTONOMOUS LOOP (Phase 3):
+Every 24h:
+1. Compute features (8 dimensions)
+2. Run LSTM prediction → risk probability for next 7 days
+3. Run COE → determine orchestration state
+4. Select companion mode (A/B/C)
+5. Adjust care plan (check-in frequency, AI tone, proactive topics)
+6. Execute care actions (proactive messages, reminders, nudges)
+7. Measure outcomes (did user respond? mood better? risk lower?)
+8. Feed outcomes back to model (online learning)
+9. Update semantic memory with new patterns
+The loop runs without human initiation.
+Caregivers only see alerts + weekly summaries.
+They intervene only when system flags human touch needed.
+10.4 Vision Statement
+NaMo Care Companion Platform Vision
+ระยะที่ 1: ทุกผู้สูงอายุมีเพื่อนคุย ไม่โดดเดี่ยวอีกต่อไป
+ระยะที่ 2: ทุกครอบครัวรู้ว่าผู้สูงอายุเป็นยังไง โดยไม่ต้องโทรถามทุกวัน
+ระยะที่ 3: ทุกโรงพยาบาลมีระบบ follow-up หลัง discharge อัตโนมัติ
+ระยะที่ 4: ประเทศไทยมี infrastructure ดูแลผู้สูงอายุระดับชาติผ่าน AI
+เทคโนโลยีไม่ได้แทนความรักของครอบครัว
+แต่ทำให้ครอบครัวรักได้อย่างมีประสิทธิภาพมากขึ้น
+NaMo Care Companion  ·  Vol. III — Platform Evolution Blueprint  ·  10 Advanced Systems

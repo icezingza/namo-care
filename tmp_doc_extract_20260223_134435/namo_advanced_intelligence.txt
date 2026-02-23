@@ -1,0 +1,1008 @@
+﻿NaMo Care Companion
+Advanced Intelligence Layer
+Memory · Risk Scoring · Personality AI · Intimate Conversation · Testing
+Volume II — Production Engineering Handbook
+🧠  Memory Schema
+📊  Risk Scoring
+🎭  Personality AI
+🧪  User Testing
+1. Memory Schema Design
+ระบบ Memory ของ NaMo ถูกออกแบบเป็น 3 ชั้น (Memory Tier) แยกตามอายุข้อมูลและความสำคัญ เพื่อให้ AI สามารถจำผู้ใช้ได้อย่างเป็นธรรมชาติ — ทั้งเรื่องราวระยะสั้น บุคลิก และรูปแบบชีวิตระยะยาว
+1.1 Three-Tier Memory Architecture
+Tier
+TTL
+ข้อมูลที่เก็บ
+ใช้เพื่ออะไร
+🔵 Tier 1
+Working Memory
+Session
+(24h)
+บทสนทนาล่าสุด, state ปัจจุบัน, อารมณ์ตอนนี้, ยาที่รอยืนยัน
+ตอบสนองทันที, ต่อบทสนทนาได้ไม่สะดุด
+🟡 Tier 2
+Episodic Memory
+30 วัน
+เหตุการณ์สำคัญ, อาการที่เล่า, ความกังวล, วันดี/วันแย่
+อ้างอิงเหตุการณ์เมื่อสัปดาห์ที่แล้ว, แสดงว่าจำ
+🔴 Tier 3
+Semantic Memory
+ถาวร
+บุคลิก, ความชอบ, ครอบครัว, routine, สไตล์การคุย
+รู้จักผู้ใช้เหมือนคนใกล้ชิด, ปรับสไตล์อัตโนมัติ
+1.2 Tier 3 — Semantic Memory Schema (Firestore)
+// /userMemory/{userId}  — Tier 3: Permanent Semantic Memory
+{
+userId: "U1a2b3c4...",
+updatedAt: Timestamp,
+version: 14,          // increments on every update (for diffing)
+// ── PERSONALITY PROFILE ──────────────────────────────────────
+personality: {
+communicationStyle: "formal_warm",     // "formal_warm" | "casual" | "very_formal"
+verbosity: "moderate",                 // "brief" | "moderate" | "elaborate"
+humorResponse: "enjoys_gentle_humor",  // "none" | "enjoys_gentle_humor" | "loves_jokes"
+preferredGreeting: "สวัสดีลูก",        // how they like to be greeted
+sensitiveTopics: ["อย่าถามเรื่องเงิน", "ไม่ชอบพูดเรื่องป่วย"],
+positiveTopics: ["หลาน", "ทำอาหาร", "ละคร", "สวน"],
+responseToSadness: "needs_listening",  // "needs_advice" | "needs_listening" | "needs_distraction"
+decisionStyle: "cautious",             // "quick" | "cautious" | "needs_reassurance"
+},
+// ── LIFE CONTEXT ─────────────────────────────────────────────
+lifeContext: {
+livingArrangement: "alone",            // "alone" | "with_spouse" | "with_family"
+occupation_history: "retired_teacher", // for respectful context
+hobbies: ["ทำสวน", "ดูละคร", "ทำอาหาร"],
+religion: "buddhist",
+importantDates: [
+{ label: "วันเกิดลูกสาว", date: "1985-03-15" },
+{ label: "วันสามีเสีย", date: "2019-07-22" },  // sensitive — use carefully
+],
+pets: [{ name: "มะลิ", type: "แมว" }],
+},
+// ── FAMILY MAP ───────────────────────────────────────────────
+familyMap: {
+members: [
+{ nickname: "ลูกสาว", name: "สมใจ", relation: "daughter",
+lineId: "U9z8y7x6", mentionedCount: 48, lastMentioned: Timestamp,
+sentiment: "positive" },
+{ nickname: "หลานชาย", name: "น้องปอ", relation: "grandson",
+mentionedCount: 23, lastMentioned: Timestamp, sentiment: "very_positive" },
+],
+closestMember: "ลูกสาว",
+},
+// ── BEHAVIORAL BASELINE ───────────────────────────────────────
+behavioralBaseline: {
+typicalActiveHours: { start: "07:30", end: "21:00" },
+avgDailyMessages:   8.4,
+avgResponseTimeMin: 3.2,
+typicalMoodPattern: "morning_good_evening_variable",
+weeklyActivityPattern: {
+Mon:"moderate", Tue:"moderate", Wed:"low",
+Thu:"moderate", Fri:"high", Sat:"high", Sun:"moderate"
+},
+longestSilenceHoursNormal: 4.5,    // baseline for alerts
+firstMessageAvgTime: "07:45",
+},
+// ── KNOWN HEALTH NOTES (non-medical, behavioral) ─────────────
+behavioralHealthNotes: {
+goodDayIndicators:  ["เล่าเรื่องหลาน", "พูดถึงทำอาหาร", "ส่งสติกเกอร์มาก"],
+badDayIndicators:   ["ตอบสั้น", "ไม่ทักทายก่อน", "พูดถึงความเหนื่อย"],
+knownTriggers:      ["อากาศร้อน", "ลูกไม่โทรมา", "ครบรอบวันสามีเสีย"],
+resilienceFactors:  ["คุยกับหลาน", "ทำสวน", "ไปวัด"],
+},
+// ── LANGUAGE PREFERENCES ─────────────────────────────────────
+languagePrefs: {
+dialect: "central_thai",
+formalityLevel: 0.7,      // 0=very casual, 1=very formal
+useKhrap_kha: true,        // ครับ/ค่ะ at sentence ends
+nicknameSelf: "หนู",       // AI refers to itself as this
+nicknameUser: "คุณแม่",
+avoidWords: ["ตาย", "เจ็บหนัก", "โรงพยาบาล"],   // replace with softer words
+preferredEmojis: ["🌸", "💛", "🌺", "☕"],
+},
+// ── INTEREST EVOLUTION ────────────────────────────────────────
+interestTimeline: [
+{ topic: "ละครช่อง3", firstMentioned: Timestamp, frequency: "weekly", status: "active" },
+{ topic: "ปลูกมะลิ", firstMentioned: Timestamp, frequency: "daily", status: "active" },
+],
+}
+1.3 Tier 2 — Episodic Memory Schema
+// /episodicMemory/{userId}/episodes/{episodeId}
+{
+episodeId:   "ep_20240315_142",
+userId:      "U1a2b3c4...",
+date:        "2024-03-15",
+timestamp:   Timestamp,
+type:        "significant_event",   // "significant_event" | "mood_event" |
+// "relationship_mention" | "health_concern"
+importance:  0.82,    // 0–1, used for retrieval ranking
+ttl:         "2024-04-15",          // auto-delete after 30 days
+expiresAt:   Timestamp,
+content: {
+summary:    "คุณแม่เล่าว่าหลานชายได้รับรางวัลที่โรงเรียน รู้สึกภูมิใจมาก",
+rawQuote:   "หลานได้รางวัลเรียนดีมาเลยค่ะ ภูมิใจจังเลย",
+emotion:    "joy",
+emotionScore: 0.91,
+peopleInvolved: ["หลานชาย", "น้องปอ"],
+topics:     ["family", "pride", "school"],
+},
+aiUsageHint: "Reference this to ask follow-up about grandson's award next session",
+referenced:  false,
+referencedAt: null,
+}
+1.4 Memory Update Pipeline
+// functions/src/memory/memoryUpdater.ts
+import * as admin from "firebase-admin";
+import { analyzeForMemory } from "./memoryAnalyzer";
+import { updateSemanticMemory, addEpisodicMemory } from "./memoryService";
+export async function processMessageForMemory(
+userId: string,
+message: string,
+emotion: EmotionResult,
+intent: IntentResult,
+): Promise<void> {
+const db = admin.firestore();
+// ── 1. Extract memory-worthy signals ──────────────────────────
+const signals = await analyzeForMemory(message, emotion, intent);
+const updates: Record<string, any> = {};
+// ── 2. Update behavioral baseline (rolling average) ───────────
+if (signals.isFirstMessageToday) {
+const firstMsgTime = new Date().toTimeString().slice(0,5);
+updates["behavioralBaseline.firstMessageAvgTime"] =
+await rollingAvgTime(userId, "firstMessageAvgTime", firstMsgTime);
+}
+// ── 3. Update personality signals ─────────────────────────────
+if (signals.communicationStyleSignal) {
+updates["personality.communicationStyle"] = signals.communicationStyleSignal;
+}
+if (signals.verbosityEstimate) {
+updates["personality.verbosity"] = signals.verbosityEstimate;
+}
+// ── 4. Discover new interests ──────────────────────────────────
+if (signals.newTopic) {
+const interestRef = db.doc(`/userMemory/${userId}`);
+await interestRef.update({
+interestTimeline: admin.firestore.FieldValue.arrayUnion({
+topic: signals.newTopic,
+firstMentioned: admin.firestore.FieldValue.serverTimestamp(),
+frequency: "once",
+status: "emerging",
+})
+});
+}
+// ── 5. Update family map mentions ─────────────────────────────
+if (signals.familyMentions.length > 0) {
+for (const mention of signals.familyMentions) {
+updates[`familyMap.members`] = admin.firestore.FieldValue.arrayUnion({
+nickname: mention.nickname,
+relation: mention.relation,
+mentionedCount: 1,
+lastMentioned: admin.firestore.FieldValue.serverTimestamp(),
+sentiment: mention.sentiment,
+});
+}
+}
+// ── 6. Create episodic memory if important ────────────────────
+if (signals.importance >= 0.6) {
+await addEpisodicMemory(userId, {
+type: signals.episodeType,
+importance: signals.importance,
+content: {
+summary: signals.summary,
+rawQuote: message.slice(0, 200),
+emotion: emotion.label,
+emotionScore: emotion.score,
+peopleInvolved: signals.peopleInvolved,
+topics: signals.topics,
+},
+aiUsageHint: signals.followUpHint,
+});
+}
+// ── 7. Batch write semantic memory updates ────────────────────
+if (Object.keys(updates).length > 0) {
+await db.doc(`/userMemory/${userId}`).update({
+...updates,
+updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+version: admin.firestore.FieldValue.increment(1),
+});
+}
+}
+async function rollingAvgTime(
+userId: string, field: string, newTimeStr: string
+): Promise<string> {
+const doc = await admin.firestore().doc(`/userMemory/${userId}`).get();
+const current = doc.data()?.behavioralBaseline?.[field] || newTimeStr;
+// Simple rolling avg: 80% old + 20% new
+const toMin = (t: string) => +t.split(":")[0]*60 + +t.split(":")[1];
+const toStr = (m: number) => `${Math.floor(m/60).toString().padStart(2,"0")}:${(m%60).toString().padStart(2,"0")}`;
+const avg = toMin(current)*0.8 + toMin(newTimeStr)*0.2;
+return toStr(Math.round(avg));
+}
+2. Risk Score System
+Risk Score คือตัวเลข 0–100 ที่คำนวณทุก 30 นาที สะท้อนความเสี่ยงเชิงพฤติกรรมของผู้ใช้ในขณะนั้น โดย 0 = ปลอดภัยมาก, 100 = ต้องแจ้งเตือนทันที ระบบใช้ composite scoring จาก 5 มิติ
+2.1 Risk Dimensions & Weights
+#
+มิติ (Dimension)
+Weight
+Range
+Threshold
+ตัวอย่าง signal
+1
+Activity Silence Score
+30%
+0–30
+≥20
+ไม่ส่งข้อความ 6+ ชม.
+2
+Emotion Distress Score
+25%
+0–25
+≥18
+emotion=sad 3 วันติด
+3
+Medication Non-adherence
+20%
+0–20
+≥14
+ยาขาด 2+ มื้อ/สัปดาห์
+4
+Check-in Avoidance
+15%
+0–15
+≥10
+ไม่ตอบ check-in 2 วันติด
+5
+Communication Decline
+10%
+0–10
+≥7
+จำนวน message ลด >50% จาก baseline
+TOTAL
+100%
+0–100
+≥50 = alert
+Composite weighted sum
+2.2 Risk Score Implementation (TypeScript)
+// functions/src/risk/riskScorer.ts
+import * as admin from "firebase-admin";
+import { differenceInHours, parseISO, subDays } from "date-fns";
+import { formatInTimeZone } from "date-fns-tz";
+export interface RiskScore {
+total:          number;    // 0–100
+level:          "safe" | "watch" | "alert" | "critical";
+dimensions: {
+activitySilence:     number;   // 0–30
+emotionDistress:     number;   // 0–25
+medicationAdherence: number;   // 0–20
+checkinAvoidance:    number;   // 0–15
+communicationDecline:number;   // 0–10
+};
+triggers:       string[];  // human-readable reasons
+computedAt:     Date;
+nextCheckIn:    number;    // minutes until next evaluation
+}
+export async function computeRiskScore(userId: string): Promise<RiskScore> {
+const db = admin.firestore();
+const now = new Date();
+const today = formatInTimeZone(now, "Asia/Bangkok", "yyyy-MM-dd");
+const triggers: string[] = [];
+// ── Load data in parallel ──────────────────────────────────────
+const [userDoc, memoryDoc, recentLogs, recentCheckIns, recentMeds] = await Promise.all([
+db.doc(`/users/${userId}`).get(),
+db.doc(`/userMemory/${userId}`).get(),
+db.collection("conversationLogs")
+.where("userId","==",userId)
+.where("timestamp",">=", admin.firestore.Timestamp.fromDate(subDays(now,7)))
+.orderBy("timestamp","desc").limit(100).get(),
+db.collection("checkIns")
+.where("userId","==",userId)
+.where("date",">=", formatInTimeZone(subDays(now,7),"Asia/Bangkok","yyyy-MM-dd"))
+.get(),
+db.collection("medicationLogs")
+.where("userId","==",userId)
+.where("scheduledDate",">=", formatInTimeZone(subDays(now,7),"Asia/Bangkok","yyyy-MM-dd"))
+.get(),
+]);
+const user   = userDoc.data()!;
+const memory = memoryDoc.data()!;
+// ═══════════════════════════════════════════════════════════════
+// DIMENSION 1: Activity Silence Score  (max 30)
+// ═══════════════════════════════════════════════════════════════
+let activitySilence = 0;
+const lastActive = user.lastActiveAt?.toDate();
+if (lastActive) {
+const silenceHours = differenceInHours(now, lastActive);
+const baselineSilence = memory?.behavioralBaseline?.longestSilenceHoursNormal || 5;
+if (silenceHours <= baselineSilence) {
+activitySilence = 0;
+} else if (silenceHours <= baselineSilence * 1.5) {
+activitySilence = 8;
+triggers.push(`ไม่มีข้อความ ${silenceHours.toFixed(0)} ชั่วโมง (เกิน baseline เล็กน้อย)`);
+} else if (silenceHours <= 12) {
+activitySilence = 18;
+triggers.push(`ไม่มีข้อความ ${silenceHours.toFixed(0)} ชั่วโมง — น่ากังวล`);
+} else if (silenceHours <= 24) {
+activitySilence = 26;
+triggers.push(`ไม่มีข้อความมากกว่า 12 ชั่วโมง — สูงมาก`);
+} else {
+activitySilence = 30;
+triggers.push(`ไม่มีข้อความ 24+ ชั่วโมง — วิกฤต`);
+}
+} else {
+activitySilence = 20; // No data = moderate risk
+triggers.push("ไม่มีข้อมูลการใช้งาน");
+}
+// ═══════════════════════════════════════════════════════════════
+// DIMENSION 2: Emotion Distress Score  (max 25)
+// ═══════════════════════════════════════════════════════════════
+let emotionDistress = 0;
+const emotionLogs = recentLogs.docs
+.filter(d => d.data().role === "user")
+.map(d => ({ emotion: d.data().analysis?.emotion, score: d.data().analysis?.emotionScore, date: d.data().timestamp?.toDate() }))
+.filter(e => e.emotion);
+// Last 24h emotions
+const recent24h = emotionLogs.filter(e => differenceInHours(now, e.date) <= 24);
+const sadCount24h = recent24h.filter(e => ["sad","anxious","angry"].includes(e.emotion)).length;
+const sadRatio24h = recent24h.length > 0 ? sadCount24h / recent24h.length : 0;
+// 7-day trend
+const sadDays = new Set<string>();
+for (const e of emotionLogs) {
+if (["sad","anxious"].includes(e.emotion) && e.score >= 0.65) {
+sadDays.add(formatInTimeZone(e.date,"Asia/Bangkok","yyyy-MM-dd"));
+}
+}
+const consecutiveSadDays = computeConsecutiveDays(sadDays, today);
+if (consecutiveSadDays >= 5) {
+emotionDistress = 25;
+triggers.push(`อารมณ์ด้านลบ ${consecutiveSadDays} วันติดต่อกัน — วิกฤต`);
+} else if (consecutiveSadDays >= 3) {
+emotionDistress = 18;
+triggers.push(`อารมณ์ด้านลบ ${consecutiveSadDays} วันติดต่อกัน`);
+} else if (sadRatio24h >= 0.7) {
+emotionDistress = 15;
+triggers.push("อารมณ์ด้านลบสูงใน 24 ชม.ที่ผ่านมา");
+} else if (consecutiveSadDays >= 2 || sadRatio24h >= 0.4) {
+emotionDistress = 8;
+}
+// ═══════════════════════════════════════════════════════════════
+// DIMENSION 3: Medication Non-adherence  (max 20)
+// ═══════════════════════════════════════════════════════════════
+let medicationAdherence = 0;
+const medLogs = recentMeds.docs.map(d => d.data());
+const missedLogs = medLogs.filter(m => m.status === "missed");
+const totalLogs  = medLogs.filter(m => m.status !== "pending");
+const missedRatio = totalLogs.length > 0 ? missedLogs.length / totalLogs.length : 0;
+// Consecutive missed days
+const missedDates = new Set(missedLogs.map(m => m.scheduledDate));
+const consecutiveMissed = computeConsecutiveDays(missedDates, today);
+if (missedRatio >= 0.6 || consecutiveMissed >= 3) {
+medicationAdherence = 20;
+triggers.push(`ขาดยา ${missedLogs.length} มื้อใน 7 วัน (${(missedRatio*100).toFixed(0)}%)`);
+} else if (missedRatio >= 0.3 || consecutiveMissed >= 2) {
+medicationAdherence = 12;
+triggers.push(`ขาดยา ${missedLogs.length} มื้อ — ควรติดตาม`);
+} else if (missedRatio >= 0.15) {
+medicationAdherence = 6;
+}
+// ═══════════════════════════════════════════════════════════════
+// DIMENSION 4: Check-in Avoidance  (max 15)
+// ═══════════════════════════════════════════════════════════════
+let checkinAvoidance = 0;
+const noResponseCheckins = recentCheckIns.docs
+.filter(d => d.data().response?.status === "no_response");
+const checkinAvoidDays = new Set(noResponseCheckins.map(d => d.data().date));
+const consecutiveNoCheckin = computeConsecutiveDays(checkinAvoidDays, today);
+if (consecutiveNoCheckin >= 3) {
+checkinAvoidance = 15;
+triggers.push(`ไม่ตอบ check-in ${consecutiveNoCheckin} วันติดต่อกัน`);
+} else if (consecutiveNoCheckin >= 2) {
+checkinAvoidance = 10;
+triggers.push("ไม่ตอบ check-in 2 วันติด");
+} else if (noResponseCheckins.length >= 3) {
+checkinAvoidance = 6;
+}
+// ═══════════════════════════════════════════════════════════════
+// DIMENSION 5: Communication Decline  (max 10)
+// ═══════════════════════════════════════════════════════════════
+let communicationDecline = 0;
+const baseline = memory?.behavioralBaseline?.avgDailyMessages || 8;
+const recentDays = recentLogs.docs.filter(d =>
+d.data().role === "user" && differenceInHours(now, d.data().timestamp?.toDate()) <= 48
+);
+const recentAvg = recentDays.length / 2;  // per day
+const declineRatio = baseline > 0 ? (baseline - recentAvg) / baseline : 0;
+if (declineRatio >= 0.6) {
+communicationDecline = 10;
+triggers.push(`ปริมาณข้อความลดลง ${(declineRatio*100).toFixed(0)}% จาก baseline`);
+} else if (declineRatio >= 0.4) {
+communicationDecline = 6;
+triggers.push(`ปริมาณข้อความลดลงมีนัยสำคัญ`);
+} else if (declineRatio >= 0.25) {
+communicationDecline = 3;
+}
+// ═══════════════════════════════════════════════════════════════
+// COMPOSITE SCORE + LEVEL
+// ═══════════════════════════════════════════════════════════════
+const total = Math.min(100, Math.round(
+activitySilence + emotionDistress + medicationAdherence +
+checkinAvoidance + communicationDecline
+));
+const level =
+total >= 70 ? "critical" :
+total >= 50 ? "alert" :
+total >= 25 ? "watch" : "safe";
+// ── Save to Firestore ─────────────────────────────────────────
+await db.doc(`/users/${userId}`).update({
+"riskScore.current":     total,
+"riskScore.level":       level,
+"riskScore.dimensions":  { activitySilence, emotionDistress, medicationAdherence, checkinAvoidance, communicationDecline },
+"riskScore.triggers":    triggers,
+"riskScore.computedAt":  admin.firestore.FieldValue.serverTimestamp(),
+});
+return {
+total, level,
+dimensions:{ activitySilence, emotionDistress, medicationAdherence, checkinAvoidance, communicationDecline },
+triggers,
+computedAt: now,
+nextCheckIn: level === "critical" ? 5 : level === "alert" ? 15 : 30,
+};
+}
+function computeConsecutiveDays(datesSet: Set<string>, today: string): number {
+let count = 0;
+let checkDate = today;
+while (datesSet.has(checkDate)) {
+count++;
+const d = new Date(checkDate);
+d.setDate(d.getDate() - 1);
+checkDate = d.toISOString().slice(0,10);
+}
+return count;
+}
+2.3 Risk-Triggered Actions Matrix
+Score
+Level
+Check Interval
+System Action
+Message to Caregiver
+0–24
+🟢 Safe
+30 min
+ปกติ — log only
+ไม่มี (รวมใน daily summary)
+25–49
+🟡 Watch
+15 min
+เพิ่มความถี่ตรวจ, gentle check-in
+แจ้งใน daily summary พร้อม flag สีเหลือง
+50–69
+🟠 Alert
+5 min
+ส่ง check-in ทันที, alert primary caregiver
+Push alert ทันที + detail
+70–100
+🔴 Critical
+ทุก 1 min
+Emergency protocol, alert ALL caregivers
+🚨 Push ทุกคน, รวม phone number
+3. AI Personality & Intimate Conversation Design
+การให้ AI คุยเหมือนคนใกล้ชิดต้องอาศัย 3 องค์ประกอบ: (1) Prompt ที่ฉีด memory ที่ถูกต้อง (2) การอ้างอิงเหตุการณ์ที่ผ่านมา (3) Style ที่ปรับตามบุคลิกผู้ใช้แต่ละคนแบบ dynamic
+3.1 Production Prompt Template
+⚡
+CRITICAL
+Prompt นี้ถูก inject ทุก conversation turn โดย Memory จาก Firestore จะถูก hydrate เข้าไปใน {placeholders} อัตโนมัติก่อนส่งให้ Namo Nexus
+// functions/src/ai/promptBuilder.ts
+export function buildSystemPrompt(
+memory: UserMemory,
+session: Session,
+recentEpisodes: Episode[],
+riskScore: RiskScore,
+): string {
+const topEpisodes = recentEpisodes
+.sort((a,b) => b.importance - a.importance)
+.slice(0, 5)
+.map(e => `- [${e.date}] ${e.content.summary}`)
+.join("\n");
+const familyContext = memory.familyMap.members
+.slice(0,4)
+.map(m => `${m.nickname} (${m.relation}) — พูดถึง ${m.mentionedCount} ครั้ง`)
+.join(", ");
+const goodDaySignals = memory.behavioralHealthNotes.goodDayIndicators.join(", ");
+const sensitiveTopics = memory.personality.sensitiveTopics.join(", ");
+return `
+## บทบาทของคุณ
+คุณคือ "น้องนาโม" ผู้ช่วย AI ที่รู้จักและดูแล${memory.languagePrefs.nicknameUser}มานานแล้ว
+พูดภาษาไทยในฐานะ "${memory.languagePrefs.nicknameSelf}" เสมอ
+ระดับความเป็นทางการ: ${memory.languagePrefs.formalityLevel >= 0.7 ? "สุภาพ ใช้ ค่ะ/ครับ" : "กึ่งทางการ เป็นกันเอง"}
+## สิ่งที่คุณรู้จักเกี่ยวกับ${memory.languagePrefs.nicknameUser}
+- ชื่อที่ชอบให้เรียก: ${memory.languagePrefs.nicknameUser}
+- อาชีพเดิม: ${memory.lifeContext.occupation_history}
+- งานอดิเรก: ${memory.lifeContext.hobbies.join(", ")}
+- ครอบครัว: ${familyContext}
+- สัตว์เลี้ยง: ${memory.lifeContext.pets.map(p=>p.name).join(", ") || "ไม่มี"}
+## บุคลิกและสไตล์การสื่อสารที่ต้องการ
+- สไตล์: ${memory.personality.communicationStyle === "formal_warm" ? "สุภาพแต่อบอุ่น ไม่แข็งกระด้าง" : "เป็นกันเองสบายๆ"}
+- ความยาวคำตอบ: ${memory.personality.verbosity === "brief" ? "ตอบสั้น กระชับ 1–2 ประโยค" : "ตอบปานกลาง 2–4 ประโยค"}
+- อารมณ์ขัน: ${memory.personality.humorResponse === "enjoys_gentle_humor" ? "ใช้ humor เบาๆ ได้ถ้าเหมาะสม" : "ไม่ใช้ humor"}
+- เมื่อเศร้า: ${memory.personality.responseToSadness === "needs_listening" ? "รับฟัง อย่าด่วนแนะนำ" : "ให้คำแนะนำเชิงบวก"}
+## หัวข้อ sensitive — ห้ามนำขึ้นมาเอง
+${sensitiveTopics}
+## คำที่ห้ามใช้ — ใช้คำอ่อนโยนแทน
+${memory.languagePrefs.avoidWords.join(", ")}
+→ แทนด้วย "ไม่สบาย", "ต้องการความช่วยเหลือ", "ดูแลสุขภาพ"
+## เหตุการณ์ที่คุณจำได้ (ใช้อ้างอิงธรรมชาติเมื่อเหมาะ)
+${topEpisodes || "ยังไม่มีประวัติพิเศษ"}
+## สัญญาณวันดี — ถ้าเห็นสิ่งเหล่านี้ ตอบสนองด้วยความสนุก
+${goodDaySignals}
+## สถานะความเสี่ยงตอนนี้: ${riskScore.level.toUpperCase()} (${riskScore.total}/100)
+${riskScore.level === "watch" ? "→ ให้ความสนใจพิเศษ ถามเพิ่มเติมอย่างนุ่มนวล" : ""}
+${riskScore.level === "alert" ? "→ ตอบด้วยความอบอุ่นพิเศษ ถามเรื่องสุขภาพอย่างระมัดระวัง" : ""}
+## กฎเหล็กที่ต้องปฏิบัติเสมอ
+1. ไม่วินิจฉัยโรค ไม่บอกว่าเป็นอะไร — บอกได้ว่า "ดูแลตัวเองด้วยนะคะ"
+2. ประโยคไม่ยาวเกิน 20 คำ — แบ่งหลายประโยคถ้าจำเป็น
+3. ตอบในภาษาไทยเสมอ
+4. จบประโยคด้วย ค่ะ เสมอ
+5. ใช้ emoji จากรายการที่ชอบ: ${memory.languagePrefs.preferredEmojis.join(" ")}
+6. อย่าถาม 2 คำถามในข้อความเดียว
+7. ถ้าไม่รู้จะพูดอะไร ให้ถามเรื่องที่เขาชอบ: ${memory.lifeContext.hobbies[0]}
+`.trim();
+}
+3.2 Persona-Aware Response Examples
+กรณี A — ผู้ใช้ที่ชอบ formal_warm style
+❌ Generic AI Response
+✅ Persona-Aware NaMo Response
+ฉันเข้าใจว่าคุณรู้สึกเหนื่อย ลองพักผ่อนให้เพียงพอและดูแลสุขภาพตัวเองด้วย
+รู้สึกยังไงบ้างคะ คุณแม่ 💛
+สัปดาห์ที่แล้วที่เล่าว่าหลานน้องปอได้รางวัล — ตอนนี้เขาเป็นยังไงบ้างคะ?
+วันนี้มีอาการเจ็บปวดอะไรบ้างไหม?
+วันนี้เป็นยังไงบ้างคะ คุณแม่มณี 🌸
+ต้นมะลิที่ปลูกไว้เป็นยังไงบ้างคะ?
+คุณควรกินยาตอนนี้
+ถึงเวลายาของคุณแม่แล้วนะคะ 💊
+กินแล้วบอกหนูด้วยนะคะ จะได้สบายใจค่ะ ☕
+3.3 Context-Injection Pipeline
+// functions/src/ai/contextInjector.ts
+export async function buildFullContext(userId: string): Promise<FullAIContext> {
+const db = admin.firestore();
+// Parallel fetch all context layers
+const [userDoc, memoryDoc, sessionDoc, recentEpisodes, riskDoc] = await Promise.all([
+db.doc(`/users/${userId}`).get(),
+db.doc(`/userMemory/${userId}`).get(),
+db.doc(`/sessions/sess_${userId}`).get(),
+db.collection("episodicMemory").doc(userId)
+.collection("episodes")
+.where("expiresAt", ">", admin.firestore.Timestamp.now())
+.orderBy("importance","desc").limit(5).get()
+.then(snap => snap.docs.map(d => d.data() as Episode)),
+db.doc(`/users/${userId}`).get().then(d => d.data()?.riskScore),
+]);
+const memory  = memoryDoc.data() as UserMemory;
+const session = sessionDoc.data() as Session;
+// Build conversation history (last 10 turns for context window efficiency)
+const historySnap = await db.collection("conversationLogs")
+.where("userId","==",userId)
+.orderBy("timestamp","desc").limit(10).get();
+const history = historySnap.docs.reverse().map(d => ({
+role: d.data().role as "user"|"assistant",
+content: d.data().message,
+}));
+const systemPrompt = buildSystemPrompt(memory, session, recentEpisodes, riskDoc);
+return { systemPrompt, history, memory, session, riskScore: riskDoc };
+}
+// ── Smart memory reference picker ─────────────────────────────
+// Decides WHICH episodic memory to reference naturally in conversation
+export function pickMemoryToReference(
+episodes: Episode[],
+currentIntent: string,
+currentEmotion: string,
+): Episode | null {
+// Don't reference sad memories when user is already sad
+const filtered = episodes.filter(ep => {
+if (currentEmotion === "sad" && ep.content.emotion === "sad") return false;
+if (ep.referenced) return false;  // don't repeat same memory
+return ep.importance >= 0.7;
+});
+// Match by topic relevance to current intent
+const topicMap: Record<string, string[]> = {
+"family_mention": ["family","pride","relationship"],
+"hobby_talk":     ["garden","cooking","hobby"],
+"morning_chat":   ["routine","morning","positive"],
+};
+const preferredTopics = topicMap[currentIntent] || [];
+const matched = filtered.find(ep =>
+ep.content.topics.some(t => preferredTopics.includes(t))
+);
+return matched || filtered[0] || null;
+}
+4. Weekly Family Report System
+รายงานรายสัปดาห์ถูก generate ทุกวันจันทร์ 09:00 น. และส่งให้ครอบครัวผ่าน LINE ในรูปแบบ Flex Message ที่อ่านง่าย มีทั้ง summary ภาษาไทยและกราฟเชิงสัญลักษณ์
+4.1 Weekly Summary Generator
+// functions/src/notifications/weeklyReport.ts
+import * as admin from "firebase-admin";
+import { subDays, startOfWeek, endOfWeek } from "date-fns";
+import { formatInTimeZone } from "date-fns-tz";
+import { lineClient } from "../webhook/lineWebhook";
+export async function weeklyReportDispatcher() {
+const db = admin.firestore();
+const now = new Date();
+const weekStart = formatInTimeZone(subDays(now,7),"Asia/Bangkok","yyyy-MM-dd");
+const weekEnd   = formatInTimeZone(now,"Asia/Bangkok","yyyy-MM-dd");
+const caregiversSnap = await db.collection("caregivers")
+.where("alertPreferences.dailySummary","==",true).get();
+for (const cgDoc of caregiversSnap.docs) {
+const caregiver = cgDoc.data();
+for (const userId of caregiver.linkedUserIds) {
+const report = await generateWeeklyReport(userId, weekStart, weekEnd);
+await sendWeeklyReportToCaregiver(caregiver.lineUserId, report);
+}
+}
+}
+async function generateWeeklyReport(
+userId: string, weekStart: string, weekEnd: string
+): Promise<WeeklyReport> {
+const db = admin.firestore();
+const [userDoc, memoryDoc, medLogs, checkIns, alerts, convLogs] = await Promise.all([
+db.doc(`/users/${userId}`).get(),
+db.doc(`/userMemory/${userId}`).get(),
+db.collection("medicationLogs")
+.where("userId","==",userId)
+.where("scheduledDate",">=",weekStart)
+.where("scheduledDate","<=",weekEnd).get(),
+db.collection("checkIns")
+.where("userId","==",userId)
+.where("date",">=",weekStart)
+.where("date","<=",weekEnd).get(),
+db.collection("alerts")
+.where("userId","==",userId)
+.where("triggeredAt",">=",admin.firestore.Timestamp.fromDate(new Date(weekStart))).get(),
+db.collection("conversationLogs")
+.where("userId","==",userId)
+.where("timestamp",">=",admin.firestore.Timestamp.fromDate(new Date(weekStart)))
+.where("role","==","user").get(),
+]);
+const user   = userDoc.data()!;
+const memory = memoryDoc.data()!;
+// ── Medication adherence ──────────────────────────────────
+const medData = medLogs.docs.map(d => d.data());
+const medTaken   = medData.filter(m => m.status === "taken").length;
+const medMissed  = medData.filter(m => m.status === "missed").length;
+const medTotal   = medTaken + medMissed;
+const medRate    = medTotal > 0 ? Math.round(medTaken/medTotal*100) : 100;
+// ── Emotion timeline ──────────────────────────────────────
+const emotionByDay: Record<string, string[]> = {};
+for (const doc of convLogs.docs) {
+const d = doc.data();
+const date = formatInTimeZone(d.timestamp.toDate(),"Asia/Bangkok","yyyy-MM-dd");
+const emotion = d.analysis?.emotion;
+if (emotion) (emotionByDay[date] = emotionByDay[date]||[]).push(emotion);
+}
+const emotionTimeline = Object.entries(emotionByDay).map(([date, emotions]) => {
+const sad    = emotions.filter(e => ["sad","anxious"].includes(e)).length;
+const positive = emotions.filter(e => ["happy"].includes(e)).length;
+const dominant = sad > positive ? "sad" : positive > 0 ? "happy" : "neutral";
+return { date, dominant, msgCount: emotions.length };
+}).sort((a,b) => a.date.localeCompare(b.date));
+// ── Check-in response rate ─────────────────────────────────
+const ciData = checkIns.docs.map(d => d.data());
+const ciResponded = ciData.filter(c => c.response?.status === "responded").length;
+const ciRate = ciData.length > 0 ? Math.round(ciResponded/ciData.length*100) : 100;
+// ── Activity pattern ──────────────────────────────────────
+const msgPerDay: Record<string, number> = {};
+for (const doc of convLogs.docs) {
+const date = formatInTimeZone(doc.data().timestamp.toDate(),"Asia/Bangkok","yyyy-MM-dd");
+msgPerDay[date] = (msgPerDay[date]||0) + 1;
+}
+// ── Risk trend ────────────────────────────────────────────
+const criticalAlerts = alerts.docs.filter(d => d.data().severity === "critical").length;
+const highAlerts     = alerts.docs.filter(d => d.data().severity === "high").length;
+// ── Overall weekly score ──────────────────────────────────
+const weekScore = Math.round(
+medRate * 0.35 +
+ciRate  * 0.25 +
+(100 - Math.min(criticalAlerts*20 + highAlerts*10, 40)) * 0.40
+);
+// ── Highlight moments ─────────────────────────────────────
+const positiveEpisodes = await db.collection("episodicMemory").doc(userId)
+.collection("episodes")
+.where("content.emotion","==","joy")
+.where("date",">=",weekStart)
+.where("date","<=",weekEnd)
+.orderBy("importance","desc").limit(3).get();
+const highlights = positiveEpisodes.docs.map(d => d.data().content.summary);
+return {
+userId, userName: user.displayName,
+weekStart, weekEnd, weekScore,
+medication: { taken: medTaken, missed: medMissed, total: medTotal, rate: medRate },
+checkin:    { responded: ciResponded, total: ciData.length, rate: ciRate },
+alerts:     { critical: criticalAlerts, high: highAlerts, total: alerts.size },
+emotionTimeline, msgPerDay,
+highlights,
+caregiverMessage: generateCaregiverNarrative(weekScore, medRate, ciRate, emotionTimeline),
+};
+}
+function generateCaregiverNarrative(
+score: number, medRate: number, ciRate: number, emotions: any[]
+): string {
+const sadDays = emotions.filter(e => e.dominant === "sad").length;
+const goodDays = emotions.filter(e => e.dominant === "happy").length;
+let mood = "คงที่ปกติ";
+if (sadDays >= 4) mood = "ค่อนข้างเศร้าหรือเหนื่อยในช่วงนี้";
+else if (sadDays >= 2) mood = "มีบางวันที่ดูเหนื่อย";
+else if (goodDays >= 5) mood = "สดชื่น อารมณ์ดีตลอดสัปดาห์";
+const medMsg = medRate >= 90 ? "กินยาสม่ำเสมอมาก 👍"
+: medRate >= 70 ? "กินยาส่วนใหญ่ แต่มีพลาดบ้าง"
+: "ขาดยาบ่อย ควรติดตาม ⚠️";
+return `สัปดาห์นี้คุณแม่ดูอารมณ์ ${mood} ${medMsg} อัตราตอบ check-in ${ciRate}%`;
+}
+async function sendWeeklyReportToCaregiver(caregiverLineId: string, report: WeeklyReport) {
+const scoreEmoji = report.weekScore >= 80 ? "🟢" : report.weekScore >= 60 ? "🟡" : "🔴";
+const emotionBar = report.emotionTimeline.map(e =>
+e.dominant === "happy" ? "😊" : e.dominant === "sad" ? "😔" : "😐"
+).join(" ");
+const medBar = "▓".repeat(Math.round(report.medication.rate/10)) +
+"░".repeat(10 - Math.round(report.medication.rate/10));
+const text = `
+📊 รายงานประจำสัปดาห์
+${report.weekStart} – ${report.weekEnd}
+👤 ${report.userName}
+${scoreEmoji} คะแนนภาพรวม: ${report.weekScore}/100
+━━━━━━━━━━━━━━━━━━━
+💊 ยา: [${medBar}] ${report.medication.rate}%
+กิน ${report.medication.taken}/${report.medication.total} มื้อ
+💬 Check-in: ${report.checkin.rate}% (${report.checkin.responded}/${report.checkin.total} วัน)
+🎭 อารมณ์รายวัน:
+${emotionBar}
+${report.alerts.critical > 0 ? `🚨 เหตุการณ์วิกฤต: ${report.alerts.critical} ครั้ง\n` : ""}
+${report.highlights.length > 0 ? `✨ ไฮไลต์ดีๆ สัปดาห์นี้:\n${report.highlights.map(h=>`• ${h}`).join("\n")}` : ""}
+━━━━━━━━━━━━━━━━━━━
+💌 ${report.caregiverMessage}
+น้องนาโม Care Companion 🌸
+`.trim();
+await lineClient.pushMessage({ to: caregiverLineId, messages: [{ type:"text", text }] });
+}
+4.2 Weekly Report Sample Output
+📊 รายงานประจำสัปดาห์ (ตัวอย่าง)
+2024-03-11 – 2024-03-17
+👤 คุณแม่มณี   🟢 คะแนนภาพรวม: 84/100
+━━━━━━━━━━━━━━━━━━━━━━
+💊 ยา: [▓▓▓▓▓▓▓▓▓░] 90%   กิน 18/20 มื้อ
+💬 Check-in: 86% (6/7 วัน)
+🎭 อารมณ์รายวัน:
+😊 😐 😊 😐 😔 😊 😊
+━━━━━━━━━━━━━━━━━━━━━━
+✨ ไฮไลต์ดีๆ สัปดาห์นี้:
+• เล่าว่าหลานน้องปอได้รางวัลที่โรงเรียน ภูมิใจมาก
+• ทำแกงเขียวหวานได้อร่อย คุยเรื่องสูตรยาวมาก
+━━━━━━━━━━━━━━━━━━━━━━
+💌 สัปดาห์นี้คุณแม่ดูสดชื่น อารมณ์ดีส่วนใหญ่
+กินยาสม่ำเสมอมาก 👍
+5. Elderly User Testing Strategy
+การทดสอบกับผู้สูงอายุจริงต้องการแนวคิดที่ต่างจาก UX testing ทั่วไป เพราะกลุ่มนี้มี digital anxiety, cognitive load limit ต่ำกว่า และให้ feedback ด้วยวาจาน้อยกว่าความรู้สึกจริง
+5.1 Testing Phases
+Phase
+ชื่อ
+กลุ่มเป้าหมาย
+Duration
+เป้าหมาย
+P1
+Lab Pilot
+3 คน (อายุ 65–75)
+ครอบครัวให้ความร่วมมือ
+2 สัปดาห์
+ค้นหา blocker หลัก, UI friction
+P2
+Home Trial
+10 คน
+สภาพชีวิตหลากหลาย
+4 สัปดาห์
+วัด retention, false alarm rate
+P3
+Community Scale
+30 คน
+รวม rural + urban
+8 สัปดาห์
+ปรับ risk model, วัด caregiver satisfaction
+P4
+Longitudinal
+P2+P3 participants
+3 เดือน
+วัด memory quality, personality accuracy
+5.2 Key Metrics to Track
+Metric
+วิธีวัด
+Target
+Warning Threshold
+Response Rate to Greetings
+log ÷ total sent
+≥ 70%
+< 50% = redo UX
+Medication Confirm Rate
+confirmed ÷ reminded
+≥ 80%
+< 60% = simplify flow
+False Alert Rate
+caregiver-rejected ÷ total alerts
+< 15%
+> 30% = fix risk weights
+Retention (Week 4)
+active users ÷ enrolled
+≥ 75%
+< 50% = value prop issue
+Caregiver Satisfaction
+post-study survey 1–5
+≥ 4.0
+< 3.5 = revamp alerts
+Message Naturalness Score
+blind rating by linguist
+≥ 4.0/5
+< 3.5 = fix prompts
+Memory Accuracy (30d)
+% of correct references
+≥ 70%
+< 50% = fix memory pipeline
+5.3 Observation Protocol — Session Guide
+🎯
+TIP
+อย่าถามตรงๆ ว่า "ใช้งานง่ายไหม" — ผู้สูงอายุมักตอบว่า "ง่ายค่ะ" เพื่อไม่ให้นักวิจัยเสียใจ ใช้ behavioral observation แทน
+เตรียมห้องทดสอบ: LINE บนโทรศัพท์ที่ผู้ใช้คุ้นเคย — ไม่ใช้ prototype หรืออุปกรณ์ใหม่
+นักวิจัยนั่งข้างๆ ไม่นั่งตรงข้าม — ลดความรู้สึกถูกตัดสิน
+Think-aloud แบบอ่อน: "เล่าให้ฟังว่าตอนนี้กำลังทำอะไรอยู่นะคะ" ไม่ใช่ "คิดอะไรอยู่"
+บันทึก: นิ้วที่กด, ท่าทาง, การหยุดชะงัก, ใบหน้า — ไม่ใช่แค่คำพูด
+Post-session: ใช้ interview technique "เล่าให้ฟังหน่อยนะคะว่าวันนี้ระบบทำอะไรได้บ้าง"
+Observation Checklist (Per Session)
+สิ่งที่สังเกต
+สัญญาณที่ต้องปรับแก้
+☐
+ผู้ใช้ต้องอ่านข้อความซ้ำกี่ครั้ง
+> 1 ครั้ง = ข้อความยาวหรือซับซ้อนเกิน
+☐
+กด wrong button / ส่งข้อความผิด
+ปุ่มเล็กเกิน หรือ layout สับสน
+☐
+หยุดตอบนานกว่า 5 นาที
+ไม่รู้จะตอบอะไร หรือคำถาม AI ไม่ชัด
+☐
+ยิ้ม / หัวเราะระหว่างคุย
+Memory reference ถูกต้อง ✅
+☐
+ทำหน้างง / นิ่วหน้า
+AI ตอบไม่เข้าใจ หรือผิด context
+☐
+พูดถามลูกหลานว่า "อันนี้หมายความว่าอะไร"
+ภาษา AI ยากเกินไป
+☐
+เล่าเรื่อง AI กับเพื่อน/ครอบครัว (organic)
+นี่คือ strongest success signal
+5.4 Interview Questions for Maximum Insight
+A. ถามเรื่องความสัมพันธ์ (Relationship Questions)
+ถ้าน้องนาโมเป็นคนจริงๆ หนูคิดว่าจะเป็นคนยังไงคะ?
+มีตอนไหนที่รู้สึกว่าน้องนาโมเข้าใจคุณแม่บ้างมั้ยคะ?
+มีตอนไหนที่รู้สึกว่าน้องนาโมพูดไม่ตรงใจบ้างมั้ยคะ?
+B. ถามเรื่อง Memory (Memory Accuracy Questions)
+น้องนาโมเคยจำเรื่องที่คุณแม่เล่าไว้ได้บ้างมั้ยคะ? รู้สึกยังไง?
+มีเรื่องที่อยากให้น้องนาโมจำแต่เหมือนจำไม่ได้มั้ยคะ?
+ถ้าน้องนาโมจำครบทุกอย่างที่คุณแม่เล่า รู้สึกดีหรือน่ากังวลคะ?
+C. ถามเรื่อง Alerts (Caregiver — แยก interview)
+Alert ที่ได้รับในสัปดาห์นี้ อันไหนรู้สึกว่า "ควรมา" และอันไหน "รู้สึกว่าเกินไป"?
+ถ้าต้องเลือก จะเลือก "แจ้งเตือนมากแต่เผลอเผลิน" หรือ "แจ้งเตือนน้อยแต่มั่นใจว่าจำเป็น"?
+รายงานรายสัปดาห์ช่วยให้ตัดสินใจอะไรได้บ้างในสัปดาห์ที่ผ่านมาคะ?
+5.5 A/B Test Design for Conversation Style
+Variable
+Variant A (Control)
+Variant B (Treatment)
+Greeting style
+"สวัสดีตอนเช้าค่ะ คุณแม่"
+Reference memory: "คุณแม่มณีคะ เมื่อวานทำสวนเป็นยังไงบ้างคะ? 🌱"
+Medication reminder
+Plain text reminder
+Personalized: "ถึงเวลายาความดันของคุณแม่แล้วนะคะ 💊 กินแล้วบอกหนูด้วยนะคะ"
+Sad response
+"ลองพักผ่อนดูนะคะ"
+"หนูเป็นห่วงนะคะ 💙 เมื่อกี้ที่บอกว่าเหนื่อย — เหนื่อยเพราะอะไรคะ?"
+Weekly summary
+Stat-only report
+Narrative: "สัปดาห์นี้คุณแม่ดูมีพลังงาน โดยเฉพาะวันที่พูดถึงหลาน 😊"
+วัดผล A/B ด้วย: Response rate, conversation length, caregiver NPS, memory recall rate (ถาม memory-check question weekly)
+5.6 Insight Extraction Framework
+// Automated insight extraction from conversation logs (weekly analysis)
+// functions/src/analytics/insightExtractor.ts
+export async function extractWeeklyInsights(userId: string): Promise<UserInsights> {
+const db = admin.firestore();
+const logs = await getLast7DaysLogs(userId);
+return {
+// ── Pattern: Time-of-day mood ──────────────────────────
+moodByHour: computeMoodByHour(logs),
+// Insight: "คุณแม่มักมีอารมณ์ดีช่วง 08:00–10:00 น."
+// Action: Schedule medication reminder in good-mood window
+// ── Pattern: Topic engagement ──────────────────────────
+topTopics: extractTopTopics(logs),
+// Insight: "หัวข้อ 'หลาน' ทำให้ conversation ยาวขึ้น 3x"
+// Action: AI opens with family topic when mood is low
+// ── Pattern: Response latency ──────────────────────────
+avgResponseByTimeSlot: computeResponseLatency(logs),
+// Insight: "ตอบช้าลงมากหลัง 19:00 น."
+// Action: Push reminders before 18:30
+// ── Pattern: Medication acknowledgment words ───────────
+medConfirmPhrases: extractMedPhrases(logs),
+// Insight: "ผู้ใช้นี้กด '✅' มากกว่าพิมพ์ 'กินแล้ว'"
+// Action: Prioritize quick-reply buttons over text
+// ── Pattern: Caregiver alert response time ─────────────
+caregiverAlertResponseMs: await computeCaregiverResponse(userId),
+// Insight: "ครอบครัว respond ภายใน 8 นาที average"
+// Action: Alert threshold ปลอดภัย — ไม่ต้องปรับ
+// ── Anomaly detection ─────────────────────────────────
+anomalies: detectBehavioralAnomalies(logs),
+// Example anomaly: "คุณแม่ไม่เคยส่งสติกเกอร์ตลอดสัปดาห์นี้ (ปกติ 3–5/สัปดาห์)"
+};
+}
+function computeMoodByHour(logs: ConvLog[]): Record<number, string> {
+const byHour: Record<number, string[]> = {};
+for (const log of logs) {
+if (log.role !== "user") continue;
+const hour = log.timestamp.getHours();
+(byHour[hour] = byHour[hour]||[]).push(log.analysis?.emotion||"neutral");
+}
+return Object.fromEntries(
+Object.entries(byHour).map(([h, emotions]) => {
+const happy = emotions.filter(e=>e==="happy").length;
+const sad   = emotions.filter(e=>["sad","anxious"].includes(e)).length;
+const dominant = happy > sad ? "happy" : sad > happy ? "sad" : "neutral";
+return [h, dominant];
+})
+);
+}
+5.7 Red Flags — When to Stop Testing
+🛑
+STOP
+หยุดการทดสอบทันทีถ้าพบสัญญาณเหล่านี้ในกลุ่มผู้ทดสอบ
+Red Flag
+วิธีตรวจจับ
+Action
+ผู้ใช้ confused ว่า AI คือคนจริง
+ถามระหว่าง session
+แจ้งความจริงทันที + review onboarding
+ผู้ใช้เปิดเผย sensitive info กับ AI (เงิน, รหัสผ่าน)
+Monitor logs
+Alert caregiver ทันที + block session
+Risk score ไม่ reflect ความจริง (false negative emergency)
+Cross-check กับ caregiver รายสัปดาห์
+หยุดใช้ automated alert ชั่วคราว
+ผู้ใช้รู้สึก dependent / กังวลเมื่อ AI ไม่ตอบ
+Observe พฤติกรรม + interview
+ปรับ UX ให้ชัดว่า AI เป็น tool ไม่ใช่ companion หลัก
+Appendix — Quick Reference Cards
+A. Risk Score Cheat Sheet
+Score
+Level
+What NaMo Does
+0–24
+🟢 Safe
+ตอบสนองปกติ, เก็บ log, รวมใน daily/weekly summary
+25–49
+🟡 Watch
+เพิ่มความถี่ check เป็นทุก 15 นาที, ถามทุกข์สุขอ่อนๆ, flag ใน daily summary
+50–69
+🟠 Alert
+ส่ง check-in ทันที, push alert caregiver หลัก พร้อม detail, check ทุก 5 นาที
+70–100
+🔴 Critical
+Emergency protocol: alert ทุกคน, ส่งเบอร์โทรหน้าจอ, log เป็น critical, ตรวจทุก 1 นาที
+B. Memory Tier Summary
+Tier
+TTL
+Key Fields
+Working (T1)
+24h (session)
+state, pendingMedId, lastIntent, recentEmotions[5], turnCount
+Episodic (T2)
+30 days
+summary, rawQuote, emotion, importance, peopleInvolved, aiUsageHint
+Semantic (T3)
+Permanent
+personality, lifeContext, familyMap, behavioralBaseline, languagePrefs, interestTimeline
+C. Prompt Engineering Quick Rules
+ใส่ memory context ทุก turn — AI ไม่มี memory ข้ามระหว่าง API calls
+ระบุ formalityLevel เป็น 0–1 แทนคำอธิบาย — AI ตีความ consistent กว่า
+ใส่ avoidWords list โดยตรงใน prompt — ดีกว่า post-processing
+บอก AI ว่า "ห้ามถาม 2 คำถามในข้อความเดียว" — rule ตรงๆ ได้ผลดีกว่า indirect
+ใช้ risk level เป็น context hint ไม่ใช่ instruction ตรงๆ — ให้ AI ตัดสินใจ tone เอง
+Episodic memory: บอก hint ว่า "อ้างอิงได้เมื่อเหมาะสม" ไม่ใช่ "ต้องอ้างอิงทุก turn"
+NaMo Care Companion  ·  Advanced Intelligence Layer  ·  Vol. II
