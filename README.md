@@ -62,6 +62,47 @@ npm run dev
 
 Open **http://localhost:5173**
 
+## Firebase (SOS Write Pipeline)
+
+For real SOS writes to Firestore, create `.env` from `.env.example` and fill real values:
+
+```bash
+cp .env.example .env
+```
+
+Required variables:
+
+- `VITE_FIREBASE_API_KEY`
+- `VITE_FIREBASE_PROJECT_ID`
+
+Current SOS flow:
+
+1. Elder taps `Giant SOS Button`.
+2. App collects latest vitals + geolocation (if allowed).
+3. App writes an event to Firestore collection `sos_events` via `src/firebase.js`.
+4. Cloud Functions can subscribe to this collection and push LINE alerts.
+
+If env is missing, the app falls back to mock mode and logs SOS payload to console.
+
+## LINE Backend (Functions)
+
+LINE webhook + reminder/check-in/alert functions are in `functions/`.
+
+- Local runbook: `functions/LOCAL_TEST.md`
+- Main webhook function: `lineWebhook`
+- Local test endpoints:
+  - `healthCheck`
+  - `seedCaregiverLink`
+  - `testMedicationReminder`
+  - `testCaregiverAlert`
+- Demo data seed:
+  - `cd functions && npm run seed:demo`
+  - `cd functions && npm run seed:clean`
+  - `cd functions && npm run seed:scenario -- distress`
+- UAT docs:
+  - `functions/UAT_CHECKLIST.md`
+  - `functions/UAT_FIELD_NOTES_TEMPLATE.md`
+
 ## 🛠️ Tech Stack
 
 - **Frontend:** React 19 + Vite 7

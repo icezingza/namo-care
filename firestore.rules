@@ -1,0 +1,155 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function caregiverDocExists() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/caregivers/$(request.auth.uid));
+    }
+
+    function isCaregiverForUser(userId) {
+      return caregiverDocExists()
+        && userId in get(/databases/$(database)/documents/caregivers/$(request.auth.uid)).data.linkedUserIds;
+    }
+
+    function canReadUser(userId) {
+      return isSelf(userId) || isCaregiverForUser(userId);
+    }
+
+    function canWriteScheduleFor(userId) {
+      return isSelf(userId) || isCaregiverForUser(userId);
+    }
+
+    function immutableLineUserId() {
+      return request.resource.data.lineUserId == resource.data.lineUserId;
+    }
+
+    // users: self + linked caregiver can read.
+    // only self can create/update own profile with restricted fields.
+    match /users/{userId} {
+      allow read: if canReadUser(userId);
+
+      allow create: if isSelf(userId)
+        && request.resource.data.lineUserId == request.auth.uid;
+
+      allow update: if isSelf(userId)
+        && immutableLineUserId()
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          "displayName",
+          "language",
+          "timezone",
+          "settings",
+          "updatedAt"
+        ]);
+
+      allow delete: if false;
+    }
+
+    // caregivers: only owner can create/update own caregiver profile.
+    // linked users can read caregiver profiles.
+    match /caregivers/{caregiverId} {
+      allow read: if isSignedIn()
+        && (
+          request.auth.uid == caregiverId
+          || (resource.data.linkedUserIds is list && request.auth.uid in resource.data.linkedUserIds)
+        );
+
+      allow create: if isSignedIn()
+        && request.auth.uid == caregiverId
+        && request.resource.data.lineUserId == request.auth.uid;
+
+      allow update: if isSignedIn()
+        && request.auth.uid == caregiverId
+        && immutableLineUserId()
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          "displayName",
+          "relationship",
+          "alertPreferences",
+          "updatedAt"
+        ]);
+
+      allow delete: if false;
+    }
+
+    // medicationSchedules: owner or linked caregiver may manage schedules.
+    match /medicationSchedules/{scheduleId} {
+      allow read: if isSignedIn()
+        && (
+          resource.data.userId == request.auth.uid
+          || isCaregiverForUser(resource.data.userId)
+        );
+
+      allow create: if isSignedIn()
+        && canWriteScheduleFor(request.resource.data.userId);
+
+      allow update: if isSignedIn()
+        && canWriteScheduleFor(resource.data.userId)
+        && request.resource.data.userId == resource.data.userId;
+
+      allow delete: if isSignedIn()
+        && canWriteScheduleFor(resource.data.userId);
+    }
+
+    // remindersLog: system-generated (Cloud Functions). Clients can only read.
+    match /remindersLog/{logId} {
+      allow read: if isSignedIn()
+        && (
+          resource.data.userId == request.auth.uid
+          || isCaregiverForUser(resource.data.userId)
+        );
+      allow create, update, delete: if false;
+    }
+
+    // conversationLogs: system-generated. Clients read only.
+    match /conversationLogs/{messageId} {
+      allow read: if isSignedIn()
+        && (
+          resource.data.userId == request.auth.uid
+          || isCaregiverForUser(resource.data.userId)
+        );
+      allow create, update, delete: if false;
+    }
+
+    // behaviorSignals: derived analytics; read-only for authorized users.
+    match /behaviorSignals/{signalId} {
+      allow read: if isSignedIn()
+        && (
+          resource.data.userId == request.auth.uid
+          || isCaregiverForUser(resource.data.userId)
+        );
+      allow create, update, delete: if false;
+    }
+
+    // alerts: read-only for user and assigned caregivers.
+    match /alerts/{alertId} {
+      allow read: if isSignedIn()
+        && (
+          resource.data.userId == request.auth.uid
+          || (resource.data.caregiverIds is list && request.auth.uid in resource.data.caregiverIds)
+        );
+      allow create, update, delete: if false;
+    }
+
+    // dailyCheckins: written by backend from LINE interactions; read-only from clients.
+    match /dailyCheckins/{checkinId} {
+      allow read: if isSignedIn()
+        && (
+          resource.data.userId == request.auth.uid
+          || isCaregiverForUser(resource.data.userId)
+        );
+      allow create, update, delete: if false;
+    }
+
+    // ephemeral server-only context
+    match /sessions/{sessionId} {
+      allow read, write: if false;
+    }
+  }
+}
