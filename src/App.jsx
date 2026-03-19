@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-  Home, SmilePlus, Pill, BarChart3, Flower2, ClipboardPlus, User, Users,
+  Home, SmilePlus, Pill, BarChart3, Flower2, ClipboardPlus, User, Users, WifiOff,
 } from 'lucide-react';
 import LoginScreen from './components/LoginScreen';
 import Dashboard from './components/Dashboard';
@@ -11,9 +11,11 @@ import HealthAnalytics from './components/HealthAnalytics';
 import MeditationTimer from './components/MeditationTimer';
 import RecordVitals from './components/RecordVitals';
 import ProfileSettings from './components/ProfileSettings';
-import { DEFAULT_SETTINGS } from './data/settings';
 import CaregiverDashboard from './components/CaregiverDashboard';
 import { useLocalStorage } from './hooks/useLocalStorage';
+import { useOnlineStatus } from './hooks/useOnlineStatus';
+import { DEFAULT_SETTINGS } from './data/settings';
+import { getAlerts, getCurrentUserId } from './firebase';
 
 const tabs = [
   { key: 'home', label: 'หน้าหลัก', icon: Home },
@@ -28,13 +30,23 @@ const tabs = [
 
 const BOTTOM_NAV_KEYS = ['home', 'mood', 'medications', 'caregiver', 'profile'];
 
-function BottomNav({ active, onNavigate }) {
+function OfflineBanner() {
+  return (
+    <div className="sticky top-0 z-50 flex items-center justify-center gap-2 py-2 px-4 bg-ink text-white text-sm font-medium">
+      <WifiOff size={16} />
+      <span>ออฟไลน์ — ข้อมูลถูกบันทึกในเครื่อง จะซิงค์เมื่อมีสัญญาณ</span>
+    </div>
+  );
+}
+
+function BottomNav({ active, onNavigate, alertCount }) {
   return (
     <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-cream-dark z-40 dark:bg-ink/95 dark:border-ink-light/20">
       <div className="max-w-lg mx-auto flex">
         {tabs.filter((t) => BOTTOM_NAV_KEYS.includes(t.key)).map((tab) => {
           const Icon = tab.icon;
           const isActive = active === tab.key;
+          const showBadge = tab.key === 'caregiver' && alertCount > 0 && !isActive;
           return (
             <button
               key={tab.key}
@@ -46,7 +58,14 @@ function BottomNav({ active, onNavigate }) {
               {isActive && (
                 <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-1 bg-saffron rounded-b-full" />
               )}
-              <Icon size={22} strokeWidth={isActive ? 2.5 : 1.8} />
+              <span className="relative">
+                <Icon size={22} strokeWidth={isActive ? 2.5 : 1.8} />
+                {showBadge && (
+                  <span className="absolute -top-1 -right-1.5 w-4 h-4 bg-danger rounded-full flex items-center justify-center text-white text-[9px] font-bold animate-pulse">
+                    {alertCount > 9 ? '9+' : alertCount}
+                  </span>
+                )}
+              </span>
               <span className={`text-[10px] leading-tight font-medium ${isActive ? 'font-semibold' : ''}`}>
                 {tab.label}
               </span>
@@ -58,7 +77,7 @@ function BottomNav({ active, onNavigate }) {
   );
 }
 
-function AppHeader({ activeTab, onNavigate }) {
+function AppHeader({ activeTab, onNavigate, profile }) {
   const getTitle = () => {
     switch (activeTab) {
       case 'mood': return 'เช็คอารมณ์';
@@ -83,8 +102,9 @@ function AppHeader({ activeTab, onNavigate }) {
         <button
           onClick={() => onNavigate('profile')}
           className="w-9 h-9 rounded-full bg-saffron-50 flex items-center justify-center"
+          aria-label="โปรไฟล์"
         >
-          <span className="text-lg">👵</span>
+          <span className="text-lg">{profile?.avatar || '👵'}</span>
         </button>
       </div>
     </header>
@@ -102,26 +122,39 @@ function PageTransition({ children, activeKey }) {
 export default function App() {
   const [user, setUser] = useState(null);
   const [activeTab, setActiveTab] = useState('home');
-  // Settings state lifted here so ProfileSettings can update dark mode reactively
   const [settings, setSettings] = useLocalStorage('namo_settings', DEFAULT_SETTINGS);
+  const [alertCount, setAlertCount] = useState(0);
+  const [profile] = useLocalStorage('namo_profile', null);
+  const isOnline = useOnlineStatus();
 
-  // Apply dark mode class to <html> element
+  // Apply dark mode class reactively
   useEffect(() => {
-    if (settings.darkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    document.documentElement.classList.toggle('dark', !!settings.darkMode);
   }, [settings.darkMode]);
+
+  // Load open alert count after login — runs once per session
+  useEffect(() => {
+    if (!user) return;
+    getCurrentUserId().then(async (uid) => {
+      try {
+        const alerts = await getAlerts(uid, 20);
+        const open = alerts.filter((a) => a.status !== 'acknowledged' && a.status !== 'resolved');
+        setAlertCount(open.length);
+      } catch { /* no alerts if Firestore unavailable */ }
+    });
+  }, [user]);
 
   const handleLogin = (userData) => setUser(userData);
 
   const handleLogout = () => {
     setUser(null);
     setActiveTab('home');
+    setAlertCount(0);
   };
 
   const handleNavigate = (tab) => {
+    // Clear badge when user opens caregiver tab
+    if (tab === 'caregiver') setAlertCount(0);
     setActiveTab(tab);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -141,7 +174,7 @@ export default function App() {
       case 'meditate':
         return <MeditationTimer />;
       case 'record':
-        return <RecordVitals onBack={() => handleNavigate('home')} />;
+        return <RecordVitals />;
       case 'analytics':
         return <HealthAnalytics />;
       case 'caregiver':
@@ -155,13 +188,14 @@ export default function App() {
 
   return (
     <div className="max-w-lg mx-auto min-h-dvh bg-cream dark:bg-ink">
-      <AppHeader activeTab={activeTab} onNavigate={handleNavigate} />
+      {!isOnline && <OfflineBanner />}
+      <AppHeader activeTab={activeTab} onNavigate={handleNavigate} profile={profile} />
       <main className="pb-20">
         <PageTransition activeKey={activeTab}>
           {renderPage()}
         </PageTransition>
       </main>
-      <BottomNav active={activeTab} onNavigate={handleNavigate} />
+      <BottomNav active={activeTab} onNavigate={handleNavigate} alertCount={alertCount} />
     </div>
   );
 }

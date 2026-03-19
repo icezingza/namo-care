@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import {
-    User, Phone, Shield, Bell, Moon, Sun, Globe,
-    ChevronRight, Heart, LogOut, Edit3, Save, Check,
+    User, Phone, Shield, Bell, Moon,
+    ChevronRight, Heart, LogOut, Edit3, Save,
 } from 'lucide-react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { userProfile } from '../data/mockData';
+import { useUserProfile } from '../hooks/useUserProfile';
 import { DEFAULT_SETTINGS } from '../data/settings';
 
 // eslint-disable-next-line no-unused-vars
@@ -37,9 +37,18 @@ export default function ProfileSettings({ onLogout, settings: settingsProp, onSe
         else setLocalSettings(next);
     };
 
+    const [profile, updateProfile] = useUserProfile();
+    const [editingProfile, setEditingProfile] = useState(false);
+    const [tempProfile, setTempProfile] = useState({ name: profile.name, age: profile.age });
+
+    const saveProfile = () => {
+        updateProfile({ name: tempProfile.name, age: Number(tempProfile.age) });
+        setEditingProfile(false);
+    };
+
     const [emergencyContact, setEmergencyContact] = useLocalStorage('namo_emergency', {
         name: 'ลูกชาย สมชาย',
-        phone: userProfile.emergencyContact,
+        phone: '092-xxx-xxxx',
         relation: 'ลูกชาย',
     });
 
@@ -61,15 +70,63 @@ export default function ProfileSettings({ onLogout, settings: settingsProp, onSe
             {/* Profile Header */}
             <div className="card text-center bg-gradient-to-r from-saffron-50 to-warm-light">
                 <div className="w-24 h-24 mx-auto mb-3 rounded-full bg-white shadow-lg flex items-center justify-center">
-                    <span className="text-5xl">{userProfile.avatar}</span>
+                    <span className="text-5xl">{profile.avatar}</span>
                 </div>
-                <h2 className="text-2xl font-bold text-ink">{userProfile.name}</h2>
-                <p className="text-ink-light text-base">{userProfile.nameEn}</p>
-                <p className="text-ink-lighter text-sm mt-1">อายุ {userProfile.age} ปี</p>
-                <div className="flex items-center justify-center gap-2 mt-2 text-sm text-serenity-green">
-                    <Heart size={14} />
-                    <span>LINE: {userProfile.lineId}</span>
-                </div>
+                {editingProfile ? (
+                    <div className="space-y-3 text-left">
+                        <div>
+                            <label className="text-sm text-ink-lighter mb-1 block">ชื่อ</label>
+                            <input
+                                type="text"
+                                value={tempProfile.name}
+                                onChange={(e) => setTempProfile((p) => ({ ...p, name: e.target.value }))}
+                                className="w-full py-3 px-4 rounded-xl border-2 border-cream-dark bg-white text-lg text-ink focus:border-saffron focus:outline-none"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-sm text-ink-lighter mb-1 block">อายุ (ปี)</label>
+                            <input
+                                type="number"
+                                min="1"
+                                max="120"
+                                value={tempProfile.age}
+                                onChange={(e) => setTempProfile((p) => ({ ...p, age: e.target.value }))}
+                                className="w-full py-3 px-4 rounded-xl border-2 border-cream-dark bg-white text-lg text-ink focus:border-saffron focus:outline-none"
+                            />
+                        </div>
+                        <div className="flex gap-3 pt-1">
+                            <button
+                                onClick={saveProfile}
+                                className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-saffron text-white font-semibold active:scale-95"
+                            >
+                                <Save size={18} /> บันทึก
+                            </button>
+                            <button
+                                onClick={() => setEditingProfile(false)}
+                                className="flex-1 py-3 rounded-xl bg-cream-dark text-ink font-semibold active:scale-95"
+                            >
+                                ยกเลิก
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <>
+                        <h2 className="text-2xl font-bold text-ink">{profile.name}</h2>
+                        <p className="text-ink-lighter text-sm mt-1">อายุ {profile.age} ปี</p>
+                        {profile.lineId && (
+                            <div className="flex items-center justify-center gap-2 mt-2 text-sm text-serenity-green">
+                                <Heart size={14} />
+                                <span>LINE: {profile.lineId}</span>
+                            </div>
+                        )}
+                        <button
+                            onClick={() => { setTempProfile({ name: profile.name, age: profile.age }); setEditingProfile(true); }}
+                            className="mt-3 flex items-center gap-1.5 mx-auto text-saffron text-sm font-medium active:scale-95"
+                        >
+                            <Edit3 size={15} /> แก้ไขโปรไฟล์
+                        </button>
+                    </>
+                )}
             </div>
 
             {/* Emergency Contact */}

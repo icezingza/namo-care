@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Sparkles, RefreshCw, ArrowLeft, PenLine, Save, Calendar } from 'lucide-react';
 import { generateDharmaAdvice } from '../data/dharma_quotes';
 import { useLocalStorage, getTodayKey, formatThaiTime } from '../hooks/useLocalStorage';
-import { saveMoodEntry, getCurrentUserId } from '../firebase';
+import { saveMoodEntry, getMoodHistory, getCurrentUserId } from '../firebase';
 
 const moods = [
     { key: 'happy', emoji: '😊', label: 'มีความสุข', labelEn: 'Happy', color: 'bg-saffron-50 border-saffron' },
@@ -43,7 +43,22 @@ export default function MoodTracker() {
     const [moodLog, setMoodLog] = useLocalStorage('namo_mood_log', []);
     const [userId, setUserId] = useState('local_user');
 
-    useEffect(() => { getCurrentUserId().then(setUserId); }, []);
+    useEffect(() => {
+        getCurrentUserId().then(async (uid) => {
+            setUserId(uid);
+            try {
+                const remote = await getMoodHistory(uid, 7);
+                if (remote?.length) {
+                    setMoodLog((local) => {
+                        const localTimestamps = new Set(local.map((e) => e.timestamp));
+                        const newEntries = remote.filter((e) => !localTimestamps.has(e.timestamp));
+                        return newEntries.length ? [...newEntries, ...local] : local;
+                    });
+                }
+            } catch { /* offline — use local only */ }
+        });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const todayLogs = moodLog.filter((entry) => entry.dateKey === getTodayKey());
 

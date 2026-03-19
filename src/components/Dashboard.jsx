@@ -13,9 +13,11 @@ import {
   Plus,
   Minus,
   Sparkles,
+  SmilePlus,
 } from 'lucide-react';
 import { vitalSigns, userProfile, medications as mockMedications } from '../data/mockData';
 import { useLocalStorage, getTodayKey, formatThaiDate } from '../hooks/useLocalStorage';
+import { useUserProfile } from '../hooks/useUserProfile';
 import { generateDharmaAdvice } from '../data/dharma_quotes';
 import { saveSOSAlert, saveMedStatus } from '../firebase';
 
@@ -99,6 +101,70 @@ async function getLocationSnapshot() {
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
     );
   });
+}
+
+function TodayOverview({ onNavigate }) {
+  const todayKey = getTodayKey();
+  const [moodLog] = useLocalStorage('namo_mood_log', []);
+  const [takenMeds] = useLocalStorage(`namo_meds_${todayKey}`, {});
+  const [glasses] = useLocalStorage(`namo_water_${todayKey}`, 0);
+
+  const todayMoodCount = useMemo(
+    () => moodLog.filter((e) => e.date === todayKey).length,
+    [moodLog, todayKey]
+  );
+  const takenCount = Object.values(takenMeds).filter(Boolean).length;
+  const totalMeds = mockMedications.length;
+
+  const items = [
+    {
+      label: 'อารมณ์วันนี้',
+      value: todayMoodCount > 0 ? `${todayMoodCount} รายการ` : 'ยังไม่บันทึก',
+      emoji: todayMoodCount > 0 ? '😊' : '😶',
+      ok: todayMoodCount > 0,
+      tab: 'mood',
+    },
+    {
+      label: 'ทานยา',
+      value: `${takenCount}/${totalMeds} มื้อ`,
+      emoji: takenCount >= totalMeds ? '✅' : '💊',
+      ok: takenCount >= totalMeds,
+      tab: 'medications',
+    },
+    {
+      label: 'ดื่มน้ำ',
+      value: `${glasses}/8 แก้ว`,
+      emoji: glasses >= 8 ? '🏆' : '💧',
+      ok: glasses >= 8,
+      tab: null,
+    },
+  ];
+
+  return (
+    <div className="card">
+      <div className="flex items-center gap-2 mb-3">
+        <SmilePlus size={18} className="text-saffron" />
+        <span className="font-semibold text-ink">สรุปวันนี้</span>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        {items.map((item) => (
+          <button
+            key={item.label}
+            onClick={() => item.tab && onNavigate?.(item.tab)}
+            className={`rounded-2xl p-3 text-center transition-all active:scale-95 ${
+              item.ok ? 'bg-serenity-green/10' : 'bg-cream'
+            } ${item.tab ? 'cursor-pointer' : 'cursor-default'}`}
+          >
+            <div className="text-2xl mb-1">{item.emoji}</div>
+            <p className={`text-xs font-semibold ${item.ok ? 'text-serenity-green' : 'text-ink-lighter'}`}>
+              {item.value}
+            </p>
+            <p className="text-[10px] text-ink-lighter mt-0.5">{item.label}</p>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function WaterTracker() {
@@ -201,6 +267,7 @@ export default function Dashboard({ user, onNavigate }) {
   const greeting = getGreeting();
   const emergencyPhone = getEmergencyPhone();
   const vitals = useLatestVitals();
+  const [profile] = useUserProfile();
 
   const handleMedConfirm = () => {
     // Mark the first untaken mock medication as taken
@@ -336,7 +403,7 @@ export default function Dashboard({ user, onNavigate }) {
             </div>
             <p className="text-xl font-semibold leading-relaxed text-ink">{greeting.text}</p>
             <p className="mt-1 text-base text-ink-light">
-              {userProfile.name} {userProfile.avatar}
+              {profile.name} {profile.avatar}
             </p>
           </div>
         </div>
@@ -404,6 +471,7 @@ export default function Dashboard({ user, onNavigate }) {
         </button>
       </div>
 
+      <TodayOverview onNavigate={onNavigate} />
       <WaterTracker />
       <DailyWisdom />
 
