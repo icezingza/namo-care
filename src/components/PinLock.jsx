@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import { ShieldCheck, Delete, Lock } from 'lucide-react';
 
 export default function PinLock({ onUnlock }) {

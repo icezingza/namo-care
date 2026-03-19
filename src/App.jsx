@@ -1,15 +1,18 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
-  Home, SmilePlus, Pill, BarChart3, Flower2, ClipboardPlus, User, LogOut,
+  Home, SmilePlus, Pill, BarChart3, Flower2, ClipboardPlus, User, Users,
 } from 'lucide-react';
 import LoginScreen from './components/LoginScreen';
 import Dashboard from './components/Dashboard';
 import MoodTracker from './components/MoodTracker';
 import MedicationTracker from './components/MedicationTracker';
+import MedicationManage from './components/MedicationManage';
 import HealthAnalytics from './components/HealthAnalytics';
 import MeditationTimer from './components/MeditationTimer';
 import RecordVitals from './components/RecordVitals';
 import ProfileSettings from './components/ProfileSettings';
+import CaregiverDashboard from './components/CaregiverDashboard';
+import { useLocalStorage } from './hooks/useLocalStorage';
 
 const tabs = [
   { key: 'home', label: 'หน้าหลัก', icon: Home },
@@ -18,25 +21,26 @@ const tabs = [
   { key: 'meditate', label: 'สมาธิ', icon: Flower2 },
   { key: 'record', label: 'บันทึก', icon: ClipboardPlus },
   { key: 'analytics', label: 'สถิติ', icon: BarChart3 },
+  { key: 'caregiver', label: 'ผู้ดูแล', icon: Users },
   { key: 'profile', label: 'โปรไฟล์', icon: User },
 ];
 
-function BottomNav({ active, onNavigate }) {
-  // Show max 5 tabs in bottom nav, rest accessible via profile or dashboard
-  const visibleTabs = ['home', 'mood', 'medications', 'meditate', 'profile'];
+const BOTTOM_NAV_KEYS = ['home', 'mood', 'medications', 'caregiver', 'profile'];
 
+function BottomNav({ active, onNavigate }) {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-cream-dark z-40">
+    <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-cream-dark z-40 dark:bg-ink/95 dark:border-ink-light/20">
       <div className="max-w-lg mx-auto flex">
-        {tabs.filter((t) => visibleTabs.includes(t.key)).map((tab) => {
+        {tabs.filter((t) => BOTTOM_NAV_KEYS.includes(t.key)).map((tab) => {
           const Icon = tab.icon;
           const isActive = active === tab.key;
           return (
             <button
               key={tab.key}
               onClick={() => onNavigate(tab.key)}
-              className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 px-1 transition-all duration-200 relative ${isActive ? 'text-saffron' : 'text-ink-lighter'
-                }`}
+              className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 px-1 transition-all duration-200 relative ${
+                isActive ? 'text-saffron' : 'text-ink-lighter dark:text-ink-lighter'
+              }`}
             >
               {isActive && (
                 <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-1 bg-saffron rounded-b-full" />
@@ -53,7 +57,7 @@ function BottomNav({ active, onNavigate }) {
   );
 }
 
-function AppHeader({ user, activeTab, onNavigate, onLogout }) {
+function AppHeader({ activeTab, onNavigate }) {
   const getTitle = () => {
     switch (activeTab) {
       case 'mood': return 'เช็คอารมณ์';
@@ -61,32 +65,31 @@ function AppHeader({ user, activeTab, onNavigate, onLogout }) {
       case 'meditate': return 'สมาธิภาวนา';
       case 'record': return 'บันทึกสุขภาพ';
       case 'analytics': return 'สถิติสุขภาพ';
+      case 'caregiver': return 'แดชบอร์ดผู้ดูแล';
+      case 'med-manage': return 'จัดการยา';
       case 'profile': return 'โปรไฟล์';
       default: return 'NaMo Care';
     }
   };
 
   return (
-    <header className="sticky top-0 bg-white/90 backdrop-blur-xl border-b border-cream-dark/50 z-30">
+    <header className="sticky top-0 bg-white/90 backdrop-blur-xl border-b border-cream-dark/50 z-30 dark:bg-ink/90 dark:border-ink-light/20">
       <div className="max-w-lg mx-auto flex items-center justify-between px-4 py-2.5">
         <div className="flex items-center gap-2">
           <span className="text-xl">🙏</span>
           <h1 className="text-lg font-bold text-saffron">{getTitle()}</h1>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => onNavigate('profile')}
-            className="w-9 h-9 rounded-full bg-saffron-50 flex items-center justify-center"
-          >
-            <span className="text-lg">👵</span>
-          </button>
-        </div>
+        <button
+          onClick={() => onNavigate('profile')}
+          className="w-9 h-9 rounded-full bg-saffron-50 flex items-center justify-center"
+        >
+          <span className="text-lg">👵</span>
+        </button>
       </div>
     </header>
   );
 }
 
-// Simple page transition wrapper
 function PageTransition({ children, activeKey }) {
   return (
     <div key={activeKey} className="animate-fade-in-up" style={{ animationDuration: '0.25s' }}>
@@ -98,10 +101,18 @@ function PageTransition({ children, activeKey }) {
 export default function App() {
   const [user, setUser] = useState(null);
   const [activeTab, setActiveTab] = useState('home');
+  const [settings] = useLocalStorage('namo_settings', { darkMode: false });
 
-  const handleLogin = (userData) => {
-    setUser(userData);
-  };
+  // Apply dark mode class to <html> element
+  useEffect(() => {
+    if (settings.darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [settings.darkMode]);
+
+  const handleLogin = (userData) => setUser(userData);
 
   const handleLogout = () => {
     setUser(null);
@@ -113,9 +124,7 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  if (!user) {
-    return <LoginScreen onLogin={handleLogin} />;
-  }
+  if (!user) return <LoginScreen onLogin={handleLogin} />;
 
   const renderPage = () => {
     switch (activeTab) {
@@ -124,13 +133,17 @@ export default function App() {
       case 'mood':
         return <MoodTracker />;
       case 'medications':
-        return <MedicationTracker />;
+        return <MedicationTracker onManage={() => handleNavigate('med-manage')} />;
+      case 'med-manage':
+        return <MedicationManage onBack={() => handleNavigate('medications')} />;
       case 'meditate':
         return <MeditationTimer />;
       case 'record':
         return <RecordVitals onBack={() => handleNavigate('home')} />;
       case 'analytics':
         return <HealthAnalytics />;
+      case 'caregiver':
+        return <CaregiverDashboard />;
       case 'profile':
         return <ProfileSettings user={user} onLogout={handleLogout} />;
       default:
@@ -139,8 +152,8 @@ export default function App() {
   };
 
   return (
-    <div className="max-w-lg mx-auto min-h-dvh bg-cream">
-      <AppHeader user={user} activeTab={activeTab} onNavigate={handleNavigate} onLogout={handleLogout} />
+    <div className="max-w-lg mx-auto min-h-dvh bg-cream dark:bg-ink">
+      <AppHeader activeTab={activeTab} onNavigate={handleNavigate} />
       <main className="pb-20">
         <PageTransition activeKey={activeTab}>
           {renderPage()}

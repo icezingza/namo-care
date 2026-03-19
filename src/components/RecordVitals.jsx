@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
     Activity, Heart, Droplets, Save, Check,
     TrendingUp, TrendingDown, Minus,
 } from 'lucide-react';
 import { useLocalStorage, getTodayKey, formatThaiTime } from '../hooks/useLocalStorage';
+import { saveVitalRecord, getCurrentUserId } from '../firebase';
 
 const vitalTypes = [
     {
@@ -61,11 +62,14 @@ const vitalTypes = [
     },
 ];
 
-export default function RecordVitals({ onBack }) {
+export default function RecordVitals() {
     const [activeType, setActiveType] = useState(null);
     const [values, setValues] = useState({});
     const [saved, setSaved] = useState(false);
     const [records, setRecords] = useLocalStorage('namo_vital_records', []);
+    const [userId, setUserId] = useState('local_user');
+
+    useEffect(() => { getCurrentUserId().then(setUserId); }, []);
 
     const handleInputChange = (fieldName, value) => {
         setValues((prev) => ({ ...prev, [fieldName]: value }));
@@ -83,6 +87,8 @@ export default function RecordVitals({ onBack }) {
             dateKey: getTodayKey(),
         };
         setRecords((prev) => [record, ...prev]);
+        // Sync to Firestore (fire-and-forget, localStorage is the source of truth locally)
+        saveVitalRecord(userId, record);
         setSaved(true);
         setTimeout(() => {
             setActiveType(null);

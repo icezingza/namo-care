@@ -162,6 +162,49 @@ Required fields:
 - `alertTriggered` boolean
 - `updatedAt` Timestamp
 
+## 9) `users/{userId}/vitalRecords/{recordId}`
+
+Purpose: Vital signs recorded directly from the web app (blood pressure, heart rate, blood sugar).
+Written by: Frontend app. Read by: elderly user only.
+
+Required fields:
+
+- `userId` string
+- `type` string (`bloodPressure` | `heartRate` | `bloodSugar`)
+- `values` map (field names depend on type, e.g. `systolic`, `diastolic`, `value`)
+- `evaluation` map (`status`, `text`, `color`)
+- `timestamp` string (ISO 8601)
+- `dateKey` string (`YYYY-MM-DD`)
+- `savedAt` string (ISO 8601, set by frontend)
+
+## 10) `users/{userId}/moodEntries/{entryId}`
+
+Purpose: Mood check-ins recorded from the web app.
+Written by: Frontend app. Read by: elderly user only.
+
+Required fields:
+
+- `userId` string
+- `mood` string (`happy` | `neutral` | `sad` | `anxious` | `pain`)
+- `emoji` string
+- `label` string (Thai label)
+- `note` string (optional journal text)
+- `dharma` string (Dharma quote shown)
+- `timestamp` string (ISO 8601)
+- `dateKey` string (`YYYY-MM-DD`)
+- `time` string (Thai formatted time)
+- `savedAt` string (ISO 8601, set by frontend)
+
+## 11) `users/{userId}/medStatus/{dateKey}`
+
+Purpose: Daily medication completion status from web app (keyed by `YYYY-MM-DD`).
+Written by: Frontend app. Read by: elderly user only.
+
+Fields:
+
+- `{medId}` boolean (one field per medication ID, true = taken)
+- `updatedAt` string (ISO 8601)
+
 ## Relationships
 
 - `users.caregiverIds[] -> caregivers`

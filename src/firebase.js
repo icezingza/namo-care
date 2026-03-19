@@ -1,9 +1,9 @@
 /**
  * Firebase gateway for NaMo Care.
  *
- * This module writes SOS events to Firestore via REST API so the app can
- * run without the Firebase JS SDK bundle. If config is missing, it falls
- * back to a mock writer to keep local development usable.
+ * Provides anonymous auth + full Firestore REST CRUD with localStorage fallback.
+ * When VITE_FIREBASE_* env vars are absent, all writes/reads degrade gracefully to
+ * console.log / empty arrays so local development never breaks.
  */
 
 const firebaseConfig = {
@@ -15,130 +15,366 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
 };
 
-const REQUIRED_CONFIG_KEYS = ['apiKey', 'projectId'];
+const REQUIRED_KEYS = ['apiKey', 'projectId'];
 
-function hasRequiredFirebaseConfig() {
-  return REQUIRED_CONFIG_KEYS.every((key) => firebaseConfig[key]);
+export function isFirebaseConfigured() {
+  return REQUIRED_KEYS.every((k) => firebaseConfig[k]);
 }
 
-function toFirestoreFields(obj) {
-  const fields = {};
-  Object.entries(obj).forEach(([key, value]) => {
-    if (value === undefined) return;
-    fields[key] = toFirestoreValue(value);
+const FS_BASE = () =>
+  `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents`;
+
+// ─── Firestore value serialization ──────────────────────────────────────────
+
+function toFsValue(v) {
+  if (v === null || v === undefined) return { nullValue: null };
+  if (v instanceof Date) return { timestampValue: v.toISOString() };
+  if (Array.isArray(v)) {
+    if (!v.length) return { arrayValue: {} };
+    return { arrayValue: { values: v.map(toFsValue) } };
+  }
+  if (typeof v === 'string') return { stringValue: v };
+  if (typeof v === 'boolean') return { booleanValue: v };
+  if (typeof v === 'number') {
+    return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+  }
+  if (typeof v === 'object') return { mapValue: { fields: toFsFields(v) } };
+  return { stringValue: String(v) };
+}
+
+function toFsFields(obj) {
+  const f = {};
+  Object.entries(obj).forEach(([k, v]) => { if (v !== undefined) f[k] = toFsValue(v); });
+  return f;
+}
+
+function fromFsValue(fv) {
+  if (!fv) return null;
+  if ('nullValue' in fv) return null;
+  if ('stringValue' in fv) return fv.stringValue;
+  if ('booleanValue' in fv) return fv.booleanValue;
+  if ('integerValue' in fv) return Number(fv.integerValue);
+  if ('doubleValue' in fv) return fv.doubleValue;
+  if ('timestampValue' in fv) return fv.timestampValue;
+  if ('arrayValue' in fv) return (fv.arrayValue?.values || []).map(fromFsValue);
+  if ('mapValue' in fv) return fromFsFields(fv.mapValue?.fields || {});
+  return null;
+}
+
+function fromFsFields(fields) {
+  const obj = {};
+  Object.entries(fields).forEach(([k, fv]) => { obj[k] = fromFsValue(fv); });
+  return obj;
+}
+
+function docToObj(doc) {
+  if (!doc?.fields) return null;
+  return { id: doc.name?.split('/').pop() || null, ...fromFsFields(doc.fields) };
+}
+
+// ─── Anonymous Auth ──────────────────────────────────────────────────────────
+
+const AUTH_KEY = 'namo_fb_auth';
+
+function loadAuth() {
+  try {
+    const raw = localStorage.getItem(AUTH_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    if (d.expiresAt && Date.now() > d.expiresAt - 300_000) return null; // refresh 5 min early
+    return d;
+  } catch { return null; }
+}
+
+function storeAuth(d) {
+  try {
+    localStorage.setItem(AUTH_KEY, JSON.stringify({
+      ...d,
+      expiresAt: Date.now() + Number(d.expiresIn || 3600) * 1000,
+    }));
+  } catch { /* storage quota exceeded — ignore */ }
+}
+
+async function doAnonSignIn() {
+  const res = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${firebaseConfig.apiKey}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ returnSecureToken: true }) },
+  );
+  if (!res.ok) throw new Error('Anonymous sign-in failed');
+  const d = await res.json();
+  storeAuth(d);
+  return d;
+}
+
+async function doRefreshToken(refreshToken) {
+  const res = await fetch(
+    `https://securetoken.googleapis.com/v1/token?key=${firebaseConfig.apiKey}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ grant_type: 'refresh_token', refresh_token: refreshToken }) },
+  );
+  if (!res.ok) throw new Error('Token refresh failed');
+  const d = await res.json();
+  const norm = { idToken: d.id_token, localId: d.user_id, refreshToken: d.refresh_token, expiresIn: d.expires_in };
+  storeAuth(norm);
+  return norm;
+}
+
+async function getIdToken() {
+  const stored = loadAuth();
+  if (stored?.idToken) return stored.idToken;
+  if (stored?.refreshToken) {
+    try { return (await doRefreshToken(stored.refreshToken)).idToken; } catch { /* fall through to sign-in */ }
+  }
+  return (await doAnonSignIn()).idToken;
+}
+
+export async function getCurrentUserId() {
+  if (!isFirebaseConfigured()) return 'local_user';
+  const stored = loadAuth();
+  if (stored?.localId) return stored.localId;
+  try {
+    const d = await doAnonSignIn();
+    return d.localId;
+  } catch { return 'local_user'; }
+}
+
+// ─── REST helpers ────────────────────────────────────────────────────────────
+
+async function authHeaders() {
+  const h = { 'Content-Type': 'application/json' };
+  if (isFirebaseConfigured()) {
+    try { h['Authorization'] = `Bearer ${await getIdToken()}`; } catch { /* use unauthenticated */ }
+  }
+  return h;
+}
+
+async function getDocument(path, id) {
+  const url = `${FS_BASE()}/${path}/${id}?key=${firebaseConfig.apiKey}`;
+  const res = await fetch(url, { headers: await authHeaders() });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Firestore GET failed (${res.status})`);
+  return docToObj(await res.json());
+}
+
+async function setDocument(path, id, data) {
+  const url = `${FS_BASE()}/${path}/${id}?key=${firebaseConfig.apiKey}`;
+  const res = await fetch(url, {
+    method: 'PATCH', headers: await authHeaders(),
+    body: JSON.stringify({ fields: toFsFields(data) }),
   });
-  return fields;
+  if (!res.ok) throw new Error(`Firestore SET failed (${res.status})`);
+  return docToObj(await res.json());
 }
 
-function toFirestoreValue(value) {
-  if (value === null) return { nullValue: null };
-  if (value instanceof Date) return { timestampValue: value.toISOString() };
-
-  if (Array.isArray(value)) {
-    if (value.length === 0) {
-      return { arrayValue: {} };
-    }
-    return {
-      arrayValue: {
-        values: value.map((item) => toFirestoreValue(item)),
-      },
-    };
-  }
-
-  if (typeof value === 'string') return { stringValue: value };
-  if (typeof value === 'boolean') return { booleanValue: value };
-  if (typeof value === 'number') {
-    return Number.isInteger(value)
-      ? { integerValue: String(value) }
-      : { doubleValue: value };
-  }
-
-  if (typeof value === 'object') {
-    return {
-      mapValue: {
-        fields: toFirestoreFields(value),
-      },
-    };
-  }
-
-  return { stringValue: String(value) };
-}
-
-async function addFirestoreDocument(collectionPath, data) {
-  const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/${collectionPath}?key=${firebaseConfig.apiKey}`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      fields: toFirestoreFields(data),
-    }),
+async function addDocument(path, data) {
+  const url = `${FS_BASE()}/${path}?key=${firebaseConfig.apiKey}`;
+  const res = await fetch(url, {
+    method: 'POST', headers: await authHeaders(),
+    body: JSON.stringify({ fields: toFsFields(data) }),
   });
+  if (!res.ok) throw new Error(`Firestore ADD failed (${res.status})`);
+  return docToObj(await res.json());
+}
 
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => null);
-    const message = errorBody?.error?.message || `Firestore write failed (${response.status})`;
-    throw new Error(message);
+async function listSubcollection(userId, sub, pageSize = 100) {
+  const url = `${FS_BASE()}/users/${userId}/${sub}?key=${firebaseConfig.apiKey}&pageSize=${pageSize}`;
+  const res = await fetch(url, { headers: await authHeaders() });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return (data.documents || []).map(docToObj).filter(Boolean);
+}
+
+function buildFilter(conds) {
+  if (conds.length === 1) {
+    const [field, op, value] = conds[0];
+    const OP = { '==': 'EQUAL', '>=': 'GREATER_THAN_OR_EQUAL', '<=': 'LESS_THAN_OR_EQUAL', '>': 'GREATER_THAN', '<': 'LESS_THAN' };
+    return { fieldFilter: { field: { fieldPath: field }, op: OP[op] || op, value: toFsValue(value) } };
   }
+  return { compositeFilter: { op: 'AND', filters: conds.map((c) => buildFilter([c])) } };
+}
 
-  const doc = await response.json();
-  const id = doc?.name?.split('/').pop() || null;
-  return { id, raw: doc, mocked: false };
+async function queryTopLevel(collectionId, conditions = [], orderByField = null, limitN = 50) {
+  const url = `${FS_BASE()}:runQuery?key=${firebaseConfig.apiKey}`;
+  const q = { from: [{ collectionId }] };
+  if (conditions.length) q.where = buildFilter(conditions);
+  if (orderByField) q.orderBy = [{ field: { fieldPath: orderByField }, direction: 'DESCENDING' }];
+  if (limitN) q.limit = limitN;
+
+  const res = await fetch(url, {
+    method: 'POST', headers: await authHeaders(),
+    body: JSON.stringify({ structuredQuery: q }),
+  });
+  if (!res.ok) return [];
+  const rows = await res.json();
+  return rows.filter((r) => r.document).map((r) => docToObj(r.document));
+}
+
+// ─── Domain functions ────────────────────────────────────────────────────────
+
+export async function saveVitalRecord(userId, record) {
+  if (!isFirebaseConfigured()) {
+    console.log('[NaMo Care][Mock] saveVitalRecord:', record);
+    return { mocked: true };
+  }
+  try {
+    return await addDocument(`users/${userId}/vitalRecords`, { ...record, savedAt: new Date().toISOString() });
+  } catch (err) {
+    console.warn('[NaMo Care] saveVitalRecord failed:', err.message);
+    return { mocked: true };
+  }
+}
+
+export async function getVitalHistory(userId, days = 7) {
+  if (!isFirebaseConfigured()) return [];
+  try {
+    const all = await listSubcollection(userId, 'vitalRecords', days * 5);
+    return all.sort((a, b) => (b.savedAt || '').localeCompare(a.savedAt || ''));
+  } catch { return []; }
+}
+
+export async function saveMoodEntry(userId, entry) {
+  if (!isFirebaseConfigured()) {
+    console.log('[NaMo Care][Mock] saveMoodEntry:', entry);
+    return { mocked: true };
+  }
+  try {
+    return await addDocument(`users/${userId}/moodEntries`, { ...entry, savedAt: new Date().toISOString() });
+  } catch (err) {
+    console.warn('[NaMo Care] saveMoodEntry failed:', err.message);
+    return { mocked: true };
+  }
+}
+
+export async function getMoodHistory(userId, days = 7) {
+  if (!isFirebaseConfigured()) return [];
+  try {
+    const all = await listSubcollection(userId, 'moodEntries', days * 5);
+    return all.sort((a, b) => (b.savedAt || '').localeCompare(a.savedAt || ''));
+  } catch { return []; }
+}
+
+export async function saveMedStatus(userId, dateKey, medsMap) {
+  if (!isFirebaseConfigured()) {
+    console.log('[NaMo Care][Mock] saveMedStatus:', medsMap);
+    return { mocked: true };
+  }
+  try {
+    return await setDocument(`users/${userId}/medStatus`, dateKey, {
+      ...medsMap, updatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn('[NaMo Care] saveMedStatus failed:', err.message);
+    return { mocked: true };
+  }
+}
+
+export async function getMedStatus(userId, dateKey) {
+  if (!isFirebaseConfigured()) return null;
+  try {
+    return await getDocument(`users/${userId}/medStatus`, dateKey);
+  } catch { return null; }
+}
+
+export async function getMedicationSchedules(userId) {
+  if (!isFirebaseConfigured()) return [];
+  try {
+    return await queryTopLevel('medicationSchedules',
+      [['userId', '==', userId], ['isActive', '==', true]],
+      'createdAt', 50);
+  } catch { return []; }
+}
+
+export async function getAlerts(userId, limitN = 20) {
+  if (!isFirebaseConfigured()) return [];
+  try {
+    return await queryTopLevel('alerts', [['userId', '==', userId]], 'triggeredAt', limitN);
+  } catch { return []; }
+}
+
+export async function getDailyCheckins(userId, days = 7) {
+  if (!isFirebaseConfigured()) return [];
+  try {
+    return await queryTopLevel('dailyCheckins', [['userId', '==', userId]], 'scheduledAt', days);
+  } catch { return []; }
+}
+
+export async function getBehaviorSignals(userId, limitN = 10) {
+  if (!isFirebaseConfigured()) return [];
+  try {
+    return await queryTopLevel('behaviorSignals', [['userId', '==', userId]], 'computedAt', limitN);
+  } catch { return []; }
 }
 
 export async function saveSOSAlert(payload) {
-  const document = {
-    ...payload,
-    source: 'line-liff',
-    triggeredAt: new Date().toISOString(),
-  };
-
-  if (!hasRequiredFirebaseConfig()) {
+  const document = { ...payload, source: 'line-liff', triggeredAt: new Date().toISOString() };
+  if (!isFirebaseConfigured()) {
     const id = `mock_sos_${Date.now()}`;
-    console.warn('[NaMo Care] Firebase is not configured. Falling back to mock write.');
-    console.log('[NaMo Care][Mock] sos_events:', { id, ...document });
+    console.warn('[NaMo Care] Firebase not configured — mock SOS write.');
     return { id, mocked: true };
   }
-
-  return addFirestoreDocument('sos_events', document);
+  try {
+    return await addDocument('sos_events', document);
+  } catch (err) {
+    console.warn('[NaMo Care] saveSOSAlert failed:', err.message);
+    return { id: `err_${Date.now()}`, mocked: true };
+  }
 }
 
-export function isFirebaseConfigured() {
-  return hasRequiredFirebaseConfig();
-}
+// ─── Auth façade ─────────────────────────────────────────────────────────────
 
-// Temporary mock auth API for current MVP flows.
 export const auth = {
-  currentUser: null,
-  signInWithLINE: async () => {
-    const mockUser = {
-      uid: 'line_somsri_001',
-      displayName: 'Grandma Somsri',
-      photoURL: null,
-      provider: 'line.me',
-    };
-    auth.currentUser = mockUser;
-    return mockUser;
+  get currentUser() {
+    const s = loadAuth();
+    if (!s?.localId) return null;
+    return { uid: s.localId, provider: 'anonymous' };
   },
-  signOut: async () => {
-    auth.currentUser = null;
+  signIn: async () => {
+    if (!isFirebaseConfigured()) {
+      return { uid: 'local_user', displayName: 'คุณยาย สมศรี', provider: 'mock' };
+    }
+    try {
+      const d = await (loadAuth()?.localId ? Promise.resolve(loadAuth()) : doAnonSignIn());
+      return { uid: d.localId, displayName: null, provider: 'anonymous' };
+    } catch {
+      return { uid: 'local_user', displayName: null, provider: 'fallback' };
+    }
   },
+  // LINE LIFF integration placeholder — replace with Firebase Custom Token once LIFF is set up
+  signInWithLINE: async () => auth.signIn(),
+  signOut: async () => { localStorage.removeItem(AUTH_KEY); },
 };
 
-// Compatibility wrapper for existing code paths.
+// ─── Compatibility db wrapper ────────────────────────────────────────────────
+
 export const db = {
   collection: (name) => ({
-    add: (data) => addFirestoreDocument(name, data),
+    add: (data) => {
+      if (!isFirebaseConfigured()) return Promise.resolve({ id: `mock_${Date.now()}`, mocked: true });
+      return addDocument(name, data);
+    },
     doc: (id) => ({
-      get: async () => ({ exists: false, data: () => ({ id }) }),
+      get: async () => {
+        if (!isFirebaseConfigured()) return { exists: false, data: () => null };
+        try {
+          const doc = await getDocument(name, id);
+          return { exists: !!doc, data: () => doc };
+        } catch { return { exists: false, data: () => null }; }
+      },
       set: async (data) => {
-        console.warn(`[NaMo Care] db.collection(${name}).doc(${id}).set is not implemented in REST wrapper.`);
-        console.log('[NaMo Care][Mock] set payload:', data);
-        return { id, mocked: true };
+        if (!isFirebaseConfigured()) return { id, mocked: true };
+        return setDocument(name, id, data);
       },
       update: async (data) => {
-        console.warn(`[NaMo Care] db.collection(${name}).doc(${id}).update is not implemented in REST wrapper.`);
-        console.log('[NaMo Care][Mock] update payload:', data);
-        return { id, mocked: true };
+        if (!isFirebaseConfigured()) return { id, mocked: true };
+        const fieldPaths = Object.keys(data).map((k) => `updateMask.fieldPaths=${k}`).join('&');
+        const url = `${FS_BASE()}/${name}/${id}?key=${firebaseConfig.apiKey}&${fieldPaths}`;
+        const res = await fetch(url, {
+          method: 'PATCH', headers: await authHeaders(),
+          body: JSON.stringify({ fields: toFsFields(data) }),
+        });
+        if (!res.ok) throw new Error(`update failed (${res.status})`);
+        return docToObj(await res.json());
       },
     }),
   }),

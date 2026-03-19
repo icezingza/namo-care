@@ -147,6 +147,20 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // Frontend app subcollections: vitals, mood, medication status recorded from the web app.
+    // Each subcollection lives under the user's own document and is only accessible by that user.
+    match /users/{userId}/vitalRecords/{recordId} {
+      allow read, write: if isSelf(userId);
+    }
+
+    match /users/{userId}/moodEntries/{entryId} {
+      allow read, write: if isSelf(userId);
+    }
+
+    match /users/{userId}/medStatus/{dateKey} {
+      allow read, write: if isSelf(userId);
+    }
+
     // ephemeral server-only context
     match /sessions/{sessionId} {
       allow read, write: if false;

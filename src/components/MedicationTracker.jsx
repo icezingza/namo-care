@@ -1,13 +1,45 @@
-import { useState } from 'react';
-import { Check, Clock, Pill } from 'lucide-react';
-import { medications } from '../data/mockData';
+import { useState, useEffect } from 'react';
+import { Check, Clock, Pill, Plus } from 'lucide-react';
+import { medications as mockMedications } from '../data/mockData';
 import { useLocalStorage, getTodayKey } from '../hooks/useLocalStorage';
+import { saveMedStatus, getMedStatus, getMedicationSchedules, getCurrentUserId } from '../firebase';
 
-export default function MedicationTracker() {
-    const [takenMeds, setTakenMeds] = useLocalStorage(`namo_meds_${getTodayKey()}`, {});
+export default function MedicationTracker({ onManage }) {
+    const todayKey = getTodayKey();
+    const [takenMeds, setTakenMeds] = useLocalStorage(`namo_meds_${todayKey}`, {});
+    const [medications, setMedications] = useState(mockMedications);
+    const [userId, setUserId] = useState('local_user');
+
+    useEffect(() => {
+        getCurrentUserId().then(async (uid) => {
+            setUserId(uid);
+            // Try loading today's status from Firestore (merge with localStorage)
+            const remote = await getMedStatus(uid, todayKey);
+            if (remote) setTakenMeds((prev) => ({ ...remote, ...prev }));
+            // Try loading medication schedule from Firestore
+            const schedules = await getMedicationSchedules(uid);
+            if (schedules.length > 0) {
+                const mapped = schedules.map((s, i) => ({
+                    id: s.id || i,
+                    name: s.name,
+                    nameTh: s.name,
+                    dosage: s.dosage || '',
+                    time: (s.times || [])[0] || '08:00',
+                    purpose: s.purpose || '',
+                    icon: '💊',
+                }));
+                setMedications(mapped);
+            }
+        });
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     const toggleMed = (id) => {
-        setTakenMeds((prev) => ({ ...prev, [id]: !prev[id] }));
+        setTakenMeds((prev) => {
+            const next = { ...prev, [id]: !prev[id] };
+            // Sync to Firestore (fire-and-forget)
+            saveMedStatus(userId, todayKey, next);
+            return next;
+        });
     };
 
     const takenCount = Object.values(takenMeds).filter(Boolean).length;
@@ -99,6 +131,16 @@ export default function MedicationTracker() {
                 <p className="text-ink-light text-base">💡 แตะที่ยาแต่ละตัวเพื่อบันทึกว่าทานแล้ว</p>
                 <p className="text-ink-lighter text-sm mt-1">ข้อมูลจะถูกบันทึกอัตโนมัติ ✓</p>
             </div>
+
+            {onManage && (
+                <button
+                    onClick={onManage}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border-2 border-saffron text-saffron font-semibold text-lg active:scale-95 transition-all"
+                >
+                    <Plus size={20} />
+                    จัดการรายการยา
+                </button>
+            )}
         </div>
     );
 }

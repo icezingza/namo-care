@@ -6,11 +6,12 @@ import {
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { userProfile } from '../data/mockData';
 
-function SettingsToggle({ label, labelEn, icon: Icon, enabled, onToggle }) {
+// eslint-disable-next-line no-unused-vars
+function SettingsToggle({ label, labelEn, icon: SettingIcon, enabled, onToggle }) {
     return (
         <button onClick={onToggle} className="card flex items-center gap-4 w-full active:scale-[0.98] transition-all">
             <div className="w-11 h-11 rounded-xl bg-saffron-50 flex items-center justify-center shrink-0">
-                <Icon size={22} className="text-saffron" />
+                <SettingIcon size={22} className="text-saffron" />
             </div>
             <div className="flex-1 text-left">
                 <p className="font-semibold text-ink">{label}</p>
@@ -25,7 +26,7 @@ function SettingsToggle({ label, labelEn, icon: Icon, enabled, onToggle }) {
     );
 }
 
-export default function ProfileSettings({ user, onLogout }) {
+export default function ProfileSettings({ onLogout }) {
     const [settings, setSettings] = useLocalStorage('namo_settings', {
         notifications: true,
         darkMode: false,

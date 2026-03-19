@@ -68,7 +68,7 @@ export default function MeditationTimer() {
         setCurrentRound(0);
         setPhase('ready');
         setIsRunning(false);
-        setMantraIndex(Math.floor(Math.random() * mantras.length));
+        setMantraIndex((prev) => (prev + 1) % mantras.length);
     };
 
     const startBreathing = () => {

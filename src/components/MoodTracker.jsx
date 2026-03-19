@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Sparkles, RefreshCw, ArrowLeft, PenLine, Save, Calendar } from 'lucide-react';
 import { generateDharmaAdvice } from '../data/dharma_quotes';
 import { useLocalStorage, getTodayKey, formatThaiTime } from '../hooks/useLocalStorage';
+import { saveMoodEntry, getCurrentUserId } from '../firebase';
 
 const moods = [
     { key: 'happy', emoji: '😊', label: 'มีความสุข', labelEn: 'Happy', color: 'bg-saffron-50 border-saffron' },
@@ -40,6 +41,9 @@ export default function MoodTracker() {
     const [journalNote, setJournalNote] = useState('');
     const [savedNote, setSavedNote] = useState(false);
     const [moodLog, setMoodLog] = useLocalStorage('namo_mood_log', []);
+    const [userId, setUserId] = useState('local_user');
+
+    useEffect(() => { getCurrentUserId().then(setUserId); }, []);
 
     const todayLogs = moodLog.filter((entry) => entry.dateKey === getTodayKey());
 
@@ -76,6 +80,8 @@ export default function MoodTracker() {
             time: formatThaiTime(new Date()),
         };
         setMoodLog((prev) => [entry, ...prev]);
+        // Sync to Firestore (fire-and-forget)
+        saveMoodEntry(userId, entry);
         setSavedNote(true);
     };
 

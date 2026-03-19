@@ -190,5 +190,59 @@ body {
   border-left: 4px solid #F39C12;
 }
 
+/* ─── Dark Mode ─────────────────────────────────────────────────────────────
+   Applied via JS by adding/removing the 'dark' class on <html>.
+   Tailwind dark: variant requires darkMode: 'class' — we implement it
+   via custom CSS overrides here so we don't need to modify tailwind config.
+*/
+.dark body {
+  background-color: #1a2332;
+  color: #e8edf3;
+}
+
+.dark .card {
+  background: #243447;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+
+.dark .bg-cream { background-color: #1a2332 !important; }
+.dark .bg-white { background-color: #243447 !important; }
+.dark .bg-white\/90 { background-color: rgba(36, 52, 71, 0.92) !important; }
+.dark .bg-white\/95 { background-color: rgba(36, 52, 71, 0.97) !important; }
+.dark .bg-cream-dark { background-color: #2d4060 !important; }
+
+/* Text colors */
+.dark .text-ink { color: #e8edf3 !important; }
+.dark .text-ink-light { color: #a8b9cc !important; }
+.dark .text-ink-lighter { color: #6b8099 !important; }
+
+/* Inputs */
+.dark input,
+.dark textarea,
+.dark select {
+  background-color: #1a2332 !important;
+  border-color: #2d4060 !important;
+  color: #e8edf3 !important;
+}
+
+/* Border colors */
+.dark .border-cream-dark { border-color: #2d4060 !important; }
+.dark .border-cream-dark\/50 { border-color: rgba(45, 64, 96, 0.5) !important; }
+
+/* Navigation */
+.dark nav { background-color: rgba(36, 52, 71, 0.97) !important; }
+
+/* Gradient cards — mute in dark mode */
+.dark .bg-gradient-to-br,
+.dark .bg-gradient-to-r {
+  --tw-gradient-from: #243447;
+  --tw-gradient-to: #1e2e42;
+}
+
+/* Saffron-tinted backgrounds */
+.dark .bg-saffron-50 { background-color: #2d3a1a !important; }
+.dark .bg-saffron-50\/50 { background-color: rgba(45, 58, 26, 0.5) !important; }
+.dark .from-saffron-50 { --tw-gradient-from: #2d3a1a !important; }
+
 /* Google Fonts import */
 @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
