@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { userProfile } from '../data/mockData';
+import { DEFAULT_SETTINGS } from '../data/settings';
 
 // eslint-disable-next-line no-unused-vars
 function SettingsToggle({ label, labelEn, icon: SettingIcon, enabled, onToggle }) {
@@ -26,14 +27,15 @@ function SettingsToggle({ label, labelEn, icon: SettingIcon, enabled, onToggle }
     );
 }
 
-export default function ProfileSettings({ onLogout }) {
-    const [settings, setSettings] = useLocalStorage('namo_settings', {
-        notifications: true,
-        darkMode: false,
-        language: 'th',
-        fontSize: 'large',
-        sosEnabled: true,
-    });
+export default function ProfileSettings({ onLogout, settings: settingsProp, onSettingsChange }) {
+    // If settings are lifted to App.jsx use them; otherwise manage locally (fallback)
+    const [localSettings, setLocalSettings] = useLocalStorage('namo_settings', DEFAULT_SETTINGS);
+    const settings = settingsProp ?? localSettings;
+    const setSettings = (updater) => {
+        const next = typeof updater === 'function' ? updater(settings) : updater;
+        if (onSettingsChange) onSettingsChange(next);
+        else setLocalSettings(next);
+    };
 
     const [emergencyContact, setEmergencyContact] = useLocalStorage('namo_emergency', {
         name: 'ลูกชาย สมชาย',

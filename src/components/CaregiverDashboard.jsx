@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Bell, Heart, Activity, Pill, UserCheck, RefreshCw, CheckCircle, AlertTriangle, Clock } from 'lucide-react';
+import { Bell, Heart, Activity, Pill, RefreshCw, CheckCircle, AlertTriangle, Clock, ShieldCheck } from 'lucide-react';
 import { getAlerts, getDailyCheckins, getBehaviorSignals, getCurrentUserId } from '../firebase';
 import { useLocalStorage, getTodayKey, formatThaiDate } from '../hooks/useLocalStorage';
+import PinLock from './PinLock';
+
+const CAREGIVER_PIN = '5678';
 
 const SEVERITY_CONFIG = {
     critical: { bg: 'bg-danger-light', border: 'border-danger', text: 'text-danger', label: 'วิกฤต', icon: '🚨' },
@@ -97,6 +100,23 @@ function useLocalSummary() {
 }
 
 export default function CaregiverDashboard() {
+    const [unlocked, setUnlocked] = useState(false);
+
+    if (!unlocked) {
+        return (
+            <PinLock
+                pin={CAREGIVER_PIN}
+                title="แดชบอร์ดผู้ดูแล 👨‍👩‍👧"
+                hint={`PIN ผู้ดูแล: ${CAREGIVER_PIN}`}
+                onUnlock={() => setUnlocked(true)}
+            />
+        );
+    }
+
+    return <CaregiverContent />;
+}
+
+function CaregiverContent() {
     const [alerts, setAlerts] = useState([]);
     const [checkins, setCheckins] = useState([]);
     const [signals, setSignals] = useState([]);

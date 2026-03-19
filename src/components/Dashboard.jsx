@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   Heart,
   Activity,
@@ -14,10 +14,36 @@ import {
   Minus,
   Sparkles,
 } from 'lucide-react';
-import { vitalSigns, userProfile } from '../data/mockData';
+import { vitalSigns, userProfile, medications as mockMedications } from '../data/mockData';
 import { useLocalStorage, getTodayKey, formatThaiDate } from '../hooks/useLocalStorage';
 import { generateDharmaAdvice } from '../data/dharma_quotes';
-import { saveSOSAlert } from '../firebase';
+import { saveSOSAlert, saveMedStatus } from '../firebase';
+
+// Extract latest value for each vital type from recorded history
+function useLatestVitals() {
+  const [records] = useLocalStorage('namo_vital_records', []);
+  return useMemo(() => {
+    const latest = {};
+    records.forEach((r) => {
+      if (!latest[r.type] || r.timestamp > latest[r.type].timestamp) {
+        latest[r.type] = r;
+      }
+    });
+    return {
+      bloodPressure: latest.bloodPressure
+        ? { systolic: Number(latest.bloodPressure.values?.systolic), diastolic: Number(latest.bloodPressure.values?.diastolic) }
+        : { systolic: vitalSigns.bloodPressure.systolic, diastolic: vitalSigns.bloodPressure.diastolic },
+      heartRate: latest.heartRate
+        ? { value: Number(latest.heartRate.values?.value) }
+        : { value: vitalSigns.heartRate.value },
+      bloodSugar: latest.bloodSugar
+        ? { value: Number(latest.bloodSugar.values?.value) }
+        : { value: vitalSigns.bloodSugar.value },
+      hasRealData: !!(latest.bloodPressure || latest.heartRate || latest.bloodSugar),
+      lastRecordedAt: latest.bloodPressure?.timestamp || latest.heartRate?.timestamp || null,
+    };
+  }, [records]);
+}
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -170,9 +196,23 @@ export default function Dashboard({ user, onNavigate }) {
   const [sosMessage, setSosMessage] = useState('');
   const [sosReference, setSosReference] = useState('');
   const [medConfirm, setMedConfirm] = useState(false);
+  const [takenMeds, setTakenMeds] = useLocalStorage(`namo_meds_${getTodayKey()}`, {});
 
   const greeting = getGreeting();
   const emergencyPhone = getEmergencyPhone();
+  const vitals = useLatestVitals();
+
+  const handleMedConfirm = () => {
+    // Mark the first untaken mock medication as taken
+    const firstUntaken = mockMedications.find((m) => !takenMeds[m.id]);
+    if (firstUntaken) {
+      const next = { ...takenMeds, [firstUntaken.id]: true };
+      setTakenMeds(next);
+      saveMedStatus(user?.uid || 'local_user', getTodayKey(), next);
+    }
+    setMedConfirm(true);
+    setTimeout(() => setMedConfirm(false), 2000);
+  };
 
   const closeSOSOverlay = () => {
     setShowSOS(false);
@@ -198,22 +238,12 @@ export default function Dashboard({ user, onNavigate }) {
         emergencyPhone,
       },
       vitals: {
-        bloodPressure: {
-          systolic: vitalSigns.bloodPressure.systolic,
-          diastolic: vitalSigns.bloodPressure.diastolic,
-          unit: vitalSigns.bloodPressure.unit,
-        },
-        heartRate: {
-          value: vitalSigns.heartRate.value,
-          unit: vitalSigns.heartRate.unit,
-        },
-        bloodSugar: {
-          value: vitalSigns.bloodSugar.value,
-          unit: vitalSigns.bloodSugar.unit,
-        },
+        bloodPressure: { systolic: vitals.bloodPressure.systolic, diastolic: vitals.bloodPressure.diastolic, unit: 'mmHg' },
+        heartRate: { value: vitals.heartRate.value, unit: 'bpm' },
+        bloodSugar: { value: vitals.bloodSugar.value, unit: 'mg/dL' },
       },
       location,
-      lastSync: vitalSigns.lastSync,
+      lastSync: vitals.lastRecordedAt || vitalSigns.lastSync,
       triggeredBy: 'elderly_app',
     };
 
@@ -316,26 +346,28 @@ export default function Dashboard({ user, onNavigate }) {
         <div className="card px-2 py-3 text-center">
           <Activity size={20} className="mx-auto mb-1 text-danger" />
           <p className="text-lg font-bold text-ink">
-            {vitalSigns.bloodPressure.systolic}/{vitalSigns.bloodPressure.diastolic}
+            {vitals.bloodPressure.systolic}/{vitals.bloodPressure.diastolic}
           </p>
           <p className="text-xs text-ink-lighter">ความดัน</p>
         </div>
         <div className="card px-2 py-3 text-center">
           <Heart size={20} className="mx-auto mb-1 text-saffron" />
-          <p className="text-lg font-bold text-ink">{vitalSigns.heartRate.value}</p>
+          <p className="text-lg font-bold text-ink">{vitals.heartRate.value}</p>
           <p className="text-xs text-ink-lighter">ชีพจร</p>
         </div>
         <div className="card px-2 py-3 text-center">
           <Droplets size={20} className="mx-auto mb-1 text-serenity-blue" />
-          <p className="text-lg font-bold text-ink">{vitalSigns.bloodSugar.value}</p>
+          <p className="text-lg font-bold text-ink">{vitals.bloodSugar.value}</p>
           <p className="text-xs text-ink-lighter">น้ำตาล</p>
         </div>
       </div>
 
       <div className="flex items-center gap-2 px-1">
         <Watch size={14} className="text-serenity-blue" />
-        <span className="text-xs text-ink-lighter">ซิงค์จาก Smartwatch: {vitalSigns.lastSync}</span>
-        <span className="ml-1 h-2 w-2 rounded-full bg-serenity-green animate-pulse" />
+        <span className="text-xs text-ink-lighter">
+          {vitals.hasRealData ? 'บันทึกล่าสุดจากแอป' : `ค่าเริ่มต้น (กรุณาบันทึกสุขภาพ)`}
+        </span>
+        {vitals.hasRealData && <span className="ml-1 h-2 w-2 rounded-full bg-serenity-green animate-pulse" />}
       </div>
 
       <button
@@ -362,10 +394,7 @@ export default function Dashboard({ user, onNavigate }) {
           <span>บันทึกสุขภาพ</span>
         </button>
         <button
-          onClick={() => {
-            setMedConfirm(true);
-            setTimeout(() => setMedConfirm(false), 2000);
-          }}
+          onClick={handleMedConfirm}
           className={`flex flex-col items-center justify-center gap-2 rounded-2xl py-5 px-4 text-lg font-semibold text-white shadow-md transition-all active:scale-95 ${
             medConfirm ? 'bg-serenity-green' : 'bg-saffron'
           }`}

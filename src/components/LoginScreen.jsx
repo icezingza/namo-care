@@ -1,19 +1,24 @@
 import { useState } from 'react';
 import { MessageCircleHeart } from 'lucide-react';
+import { auth } from '../firebase';
 
 export default function LoginScreen({ onLogin }) {
     const [loading, setLoading] = useState(false);
 
-    const handleLogin = () => {
+    const handleLogin = async () => {
         setLoading(true);
-        // Simulate LINE Login delay
-        setTimeout(() => {
+        try {
+            const firebaseUser = await auth.signIn();
             onLogin({
-                uid: 'line_somsri_001',
-                displayName: 'คุณยาย สมศรี',
+                uid: firebaseUser?.uid || 'local_user',
+                displayName: firebaseUser?.displayName || 'คุณยาย สมศรี',
                 nameEn: 'Grandma Somsri',
+                provider: firebaseUser?.provider || 'anonymous',
             });
-        }, 1200);
+        } catch {
+            // Fallback to mock user so the app never blocks the elderly user
+            onLogin({ uid: 'local_user', displayName: 'คุณยาย สมศรี', nameEn: 'Grandma Somsri' });
+        }
     };
 
     return (

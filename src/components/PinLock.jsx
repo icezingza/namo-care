@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { ShieldCheck, Delete, Lock } from 'lucide-react';
 
-export default function PinLock({ onUnlock }) {
+export default function PinLock({ onUnlock, pin: correctPin = '1234', title = 'Guardian Lock 🔒', hint }) {
     const [pin, setPin] = useState('');
     const [error, setError] = useState(false);
     const [success, setSuccess] = useState(false);
-    const CORRECT_PIN = '1234';
+    const CORRECT_PIN = correctPin;
 
     const handleDigit = (digit) => {
         if (pin.length >= 4) return;
@@ -44,11 +44,11 @@ export default function PinLock({ onUnlock }) {
                         <Lock className="text-saffron" size={36} />
                     )}
                 </div>
-                <h2 className="text-2xl font-bold text-ink mb-2">Guardian Lock 🔒</h2>
+                <h2 className="text-2xl font-bold text-ink mb-2">{title}</h2>
                 <p className="text-ink-light text-lg">
-                    กรุณาใส่ PIN 4 หลักเพื่อดูข้อมูลสุขภาพ
+                    กรุณาใส่ PIN 4 หลักเพื่อเข้าถึง
                 </p>
-                <p className="text-ink-lighter text-sm mt-1">(PIN: 1234)</p>
+                {hint && <p className="text-ink-lighter text-sm mt-1">({hint})</p>}
             </div>
 
             {/* PIN Dots */}

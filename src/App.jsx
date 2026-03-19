@@ -11,6 +11,7 @@ import HealthAnalytics from './components/HealthAnalytics';
 import MeditationTimer from './components/MeditationTimer';
 import RecordVitals from './components/RecordVitals';
 import ProfileSettings from './components/ProfileSettings';
+import { DEFAULT_SETTINGS } from './data/settings';
 import CaregiverDashboard from './components/CaregiverDashboard';
 import { useLocalStorage } from './hooks/useLocalStorage';
 
@@ -101,7 +102,8 @@ function PageTransition({ children, activeKey }) {
 export default function App() {
   const [user, setUser] = useState(null);
   const [activeTab, setActiveTab] = useState('home');
-  const [settings] = useLocalStorage('namo_settings', { darkMode: false });
+  // Settings state lifted here so ProfileSettings can update dark mode reactively
+  const [settings, setSettings] = useLocalStorage('namo_settings', DEFAULT_SETTINGS);
 
   // Apply dark mode class to <html> element
   useEffect(() => {
@@ -145,7 +147,7 @@ export default function App() {
       case 'caregiver':
         return <CaregiverDashboard />;
       case 'profile':
-        return <ProfileSettings user={user} onLogout={handleLogout} />;
+        return <ProfileSettings onLogout={handleLogout} settings={settings} onSettingsChange={setSettings} />;
       default:
         return <Dashboard user={user} onNavigate={handleNavigate} />;
     }
