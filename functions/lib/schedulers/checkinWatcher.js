@@ -5,8 +5,10 @@ const scheduler_1 = require("firebase-functions/v2/scheduler");
 const firebase_functions_1 = require("firebase-functions");
 const firestore_1 = require("firebase-admin/firestore");
 const bootstrap_1 = require("../bootstrap");
+const firestoreService_1 = require("../services/firestoreService");
 const alertDispatcher_1 = require("../notifications/alertDispatcher");
 const lineService_1 = require("../services/lineService");
+const riskScoreService_1 = require("../services/riskScoreService");
 const CHECKIN_RESPONSE_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 exports.escalateNoResponseCheckins = (0, scheduler_1.onSchedule)({
     schedule: "every 30 minutes",
@@ -28,13 +30,15 @@ exports.escalateNoResponseCheckins = (0, scheduler_1.onSchedule)({
         if (!userId)
             continue;
         try {
+            await (0, firestoreService_1.createBehaviorSignal)(bootstrap_1.db, userId, "checkin", 70, "medium", [doc.id]);
             await (0, alertDispatcher_1.dispatchCaregiverAlert)({ db: bootstrap_1.db, lineClient }, {
                 userId,
                 type: "no_checkin",
                 severity: "medium",
-                title: "No daily check-in response",
-                detail: "No response to daily check-in within 2 hours."
+                title: "ผู้สูงอายุไม่ได้เช็กอินประจำวัน",
+                detail: "ไม่มีการตอบรับภายใน 2 ชั่วโมง กรุณาติดต่อเพื่อสอบถามอาการ"
             });
+            (0, riskScoreService_1.computeAndSaveRiskScore)(bootstrap_1.db, userId).catch(() => undefined);
             await doc.ref.set({
                 status: "no_response",
                 alertTriggered: true,

@@ -5,8 +5,10 @@ const scheduler_1 = require("firebase-functions/v2/scheduler");
 const firebase_functions_1 = require("firebase-functions");
 const firestore_1 = require("firebase-admin/firestore");
 const bootstrap_1 = require("../bootstrap");
+const firestoreService_1 = require("../services/firestoreService");
 const alertDispatcher_1 = require("../notifications/alertDispatcher");
 const lineService_1 = require("../services/lineService");
+const riskScoreService_1 = require("../services/riskScoreService");
 const ALERT_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 function toMillis(value) {
     if (value instanceof firestore_1.Timestamp)
@@ -30,9 +32,10 @@ exports.watchInactivitySignals = (0, scheduler_1.onSchedule)({
     for (const userDoc of activeUsers.docs) {
         const data = userDoc.data();
         const userId = userDoc.id;
-        const thresholdHours = typeof data.settings?.inactivityThresholdHours === "number"
+        const rawThreshold = typeof data.settings?.inactivityThresholdHours === "number"
             ? data.settings.inactivityThresholdHours
             : 6;
+        const thresholdHours = Math.max(1, rawThreshold);
         const thresholdMs = thresholdHours * 60 * 60 * 1000;
         const lastActiveMs = toMillis(data.lastActiveAt);
         if (lastActiveMs <= 0)
@@ -46,13 +49,17 @@ exports.watchInactivitySignals = (0, scheduler_1.onSchedule)({
         }
         try {
             const inactiveHoursRounded = Math.floor(inactiveMs / (60 * 60 * 1000));
+            const silenceScore = Math.min(90, 50 + inactiveHoursRounded * 5);
+            const severity = inactiveHoursRounded >= 12 ? "high" : "medium";
+            await (0, firestoreService_1.createBehaviorSignal)(bootstrap_1.db, userId, "silence", silenceScore, severity, []);
             await (0, alertDispatcher_1.dispatchCaregiverAlert)({ db: bootstrap_1.db, lineClient }, {
                 userId,
                 type: "inactivity",
-                severity: "medium",
-                title: "Silence / inactivity detected",
-                detail: `No user activity for about ${inactiveHoursRounded} hour(s).`
+                severity,
+                title: "ไม่พบความเคลื่อนไหวของผู้สูงอายุ",
+                detail: `ไม่มีกิจกรรมในระบบมาแล้วประมาณ ${inactiveHoursRounded} ชั่วโมง กรุณาตรวจสอบ`
             });
+            (0, riskScoreService_1.computeAndSaveRiskScore)(bootstrap_1.db, userId).catch(() => undefined);
             await userDoc.ref.set({
                 monitoring: {
                     lastInactivityAlertAt: now

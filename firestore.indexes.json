@@ -207,7 +207,7 @@
           "order": "DESCENDING"
         }
       ]
-    }
+    },
     {
       "collectionGroup": "behaviorSignals",
       "queryScope": "COLLECTION",

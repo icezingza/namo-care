@@ -2,8 +2,10 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import { logger } from "firebase-functions";
 import { Timestamp } from "firebase-admin/firestore";
 import { db } from "../bootstrap";
+import { createBehaviorSignal } from "../services/firestoreService";
 import { dispatchCaregiverAlert } from "../notifications/alertDispatcher";
 import { getLineClient } from "../services/lineService";
+import { computeAndSaveRiskScore } from "../services/riskScoreService";
 
 const CHECKIN_RESPONSE_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
@@ -31,16 +33,18 @@ export const escalateNoResponseCheckins = onSchedule(
       if (!userId) continue;
 
       try {
+        await createBehaviorSignal(db, userId, "checkin", 70, "medium", [doc.id]);
         await dispatchCaregiverAlert(
           { db, lineClient },
           {
             userId,
             type: "no_checkin",
             severity: "medium",
-            title: "No daily check-in response",
-            detail: "No response to daily check-in within 2 hours."
+            title: "ผู้สูงอายุไม่ได้เช็กอินประจำวัน",
+            detail: "ไม่มีการตอบรับภายใน 2 ชั่วโมง กรุณาติดต่อเพื่อสอบถามอาการ"
           }
         );
+        computeAndSaveRiskScore(db, userId).catch(() => undefined);
 
         await doc.ref.set(
           {

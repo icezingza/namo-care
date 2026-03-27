@@ -2,8 +2,10 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import { logger } from "firebase-functions";
 import { Timestamp } from "firebase-admin/firestore";
 import { db } from "../bootstrap";
+import { createBehaviorSignal } from "../services/firestoreService";
 import { dispatchCaregiverAlert } from "../notifications/alertDispatcher";
 import { getLineClient } from "../services/lineService";
+import { computeAndSaveRiskScore } from "../services/riskScoreService";
 
 const ALERT_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 
@@ -33,10 +35,11 @@ export const watchInactivitySignals = onSchedule(
     for (const userDoc of activeUsers.docs) {
       const data = userDoc.data();
       const userId = userDoc.id;
-      const thresholdHours =
+      const rawThreshold =
         typeof data.settings?.inactivityThresholdHours === "number"
           ? data.settings.inactivityThresholdHours
           : 6;
+      const thresholdHours = Math.max(1, rawThreshold);
       const thresholdMs = thresholdHours * 60 * 60 * 1000;
 
       const lastActiveMs = toMillis(data.lastActiveAt);
@@ -52,16 +55,20 @@ export const watchInactivitySignals = onSchedule(
 
       try {
         const inactiveHoursRounded = Math.floor(inactiveMs / (60 * 60 * 1000));
+        const silenceScore = Math.min(90, 50 + inactiveHoursRounded * 5);
+        const severity = inactiveHoursRounded >= 12 ? "high" : "medium";
+        await createBehaviorSignal(db, userId, "silence", silenceScore, severity, []);
         await dispatchCaregiverAlert(
           { db, lineClient },
           {
             userId,
             type: "inactivity",
-            severity: "medium",
-            title: "Silence / inactivity detected",
-            detail: `No user activity for about ${inactiveHoursRounded} hour(s).`
+            severity,
+            title: "ไม่พบความเคลื่อนไหวของผู้สูงอายุ",
+            detail: `ไม่มีกิจกรรมในระบบมาแล้วประมาณ ${inactiveHoursRounded} ชั่วโมง กรุณาตรวจสอบ`
           }
         );
+        computeAndSaveRiskScore(db, userId).catch(() => undefined);
 
         await userDoc.ref.set(
           {
