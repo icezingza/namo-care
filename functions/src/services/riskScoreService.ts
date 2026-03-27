@@ -60,6 +60,7 @@ export async function computeAndSaveRiskScore(
   const currentScore = totalWeight > 0 ? Math.round(weighted / totalWeight) : 0;
 
   // Trend: compare last 3 days vs days 3-7
+  // If no older data exists we cannot determine direction — default to stable
   const midCutoff = Timestamp.fromMillis(Date.now() - 3 * 24 * 60 * 60 * 1000);
 
   const recentDocs = snap.docs.filter(
@@ -69,20 +70,19 @@ export async function computeAndSaveRiskScore(
     (d) => (d.data().computedAt as Timestamp).toMillis() < midCutoff.toMillis()
   );
 
-  const avgOf = (docs: typeof snap.docs): number =>
-    docs.length === 0
-      ? currentScore
-      : docs.reduce((s, d) => s + (d.data().score as number), 0) / docs.length;
+  let trend: "rising" | "stable" | "falling" = "stable";
 
-  const recentAvg = avgOf(recentDocs);
-  const olderAvg = avgOf(olderDocs);
+  if (recentDocs.length > 0 && olderDocs.length > 0) {
+    const avg = (docs: typeof snap.docs) =>
+      docs.reduce((s, d) => s + (d.data().score as number), 0) / docs.length;
 
-  const trend: "rising" | "stable" | "falling" =
-    recentAvg - olderAvg > 10
-      ? "rising"
-      : olderAvg - recentAvg > 10
-      ? "falling"
-      : "stable";
+    const recentAvg = avg(recentDocs);
+    const olderAvg = avg(olderDocs);
+    const diff = recentAvg - olderAvg;
+
+    if (diff > 10) trend = "rising";
+    else if (diff < -10) trend = "falling";
+  }
 
   await db
     .collection("users")

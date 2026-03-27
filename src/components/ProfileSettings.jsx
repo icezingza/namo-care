@@ -55,23 +55,45 @@ export default function ProfileSettings({ onLogout, settings: settingsProp, onSe
 
     const [editingContact, setEditingContact] = useState(false);
     const [tempContact, setTempContact] = useState(emergencyContact);
-    const [pinChanged, setPinChanged] = useState(false);
 
     const [caregiverLineId, setCaregiverLineId] = useLocalStorage('namo_caregiver_line_id', '');
     const [editingCaregiver, setEditingCaregiver] = useState(false);
     const [tempCaregiverId, setTempCaregiverId] = useState(caregiverLineId);
     const [caregiverSaving, setCaregiverSaving] = useState(false);
+    const [caregiverIdError, setCaregiverIdError] = useState('');
+
+    const [caregiverPin, setCaregiverPin] = useLocalStorage('namo_caregiver_pin', '5678');
+    const [editingPin, setEditingPin] = useState(false);
+    const [tempPin, setTempPin] = useState('');
+    const [pinError, setPinError] = useState('');
 
     const saveCaregiverLinkHandler = async () => {
-        if (!tempCaregiverId.trim()) return;
+        const id = tempCaregiverId.trim();
+        if (!id) return;
+        if (!/^U[0-9a-f]{32}$/i.test(id)) {
+            setCaregiverIdError('LINE User ID ต้องขึ้นต้นด้วย "U" ตามด้วยตัวอักษร/ตัวเลข 32 หลัก');
+            return;
+        }
+        setCaregiverIdError('');
         setCaregiverSaving(true);
         try {
             const uid = await getCurrentUserId();
-            await saveCaregiverLink(uid, tempCaregiverId.trim());
-            setCaregiverLineId(tempCaregiverId.trim());
+            await saveCaregiverLink(uid, id);
+            setCaregiverLineId(id);
         } catch { /* fallback to local only */ }
         setCaregiverSaving(false);
         setEditingCaregiver(false);
+    };
+
+    const savePinHandler = () => {
+        if (!/^\d{4,6}$/.test(tempPin)) {
+            setPinError('รหัส PIN ต้องเป็นตัวเลข 4–6 หลัก');
+            return;
+        }
+        setPinError('');
+        setCaregiverPin(tempPin);
+        setTempPin('');
+        setEditingPin(false);
     };
 
     const toggleSetting = (key) => {
@@ -243,7 +265,10 @@ export default function ProfileSettings({ onLogout, settings: settingsProp, onSe
                             placeholder="เช่น Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
                             className="w-full py-3 px-4 rounded-xl border-2 border-cream-dark bg-cream text-base text-ink focus:border-saffron focus:outline-none"
                         />
-                        <p className="text-xs text-ink-lighter">LINE User ID ขึ้นต้นด้วย "U" ตามด้วยตัวเลข 32 หลัก</p>
+                        {caregiverIdError
+                            ? <p className="text-xs text-danger">{caregiverIdError}</p>
+                            : <p className="text-xs text-ink-lighter">LINE User ID ขึ้นต้นด้วย "U" ตามด้วยตัวอักษร/ตัวเลข 32 หลัก</p>
+                        }
                     </div>
                 ) : (
                     <div className="flex items-center gap-3 py-1">
@@ -266,7 +291,7 @@ export default function ProfileSettings({ onLogout, settings: settingsProp, onSe
 
                 <SettingsToggle
                     label="การแจ้งเตือนยา"
-                    labelEn="Medication Reminders"
+                    labelEn="แจ้งเตือนเวลาทานยาตามตารางที่ตั้งไว้"
                     icon={Bell}
                     enabled={settings.notifications}
                     onToggle={() => toggleSetting('notifications')}
@@ -274,15 +299,15 @@ export default function ProfileSettings({ onLogout, settings: settingsProp, onSe
 
                 <SettingsToggle
                     label="โหมดกลางคืน"
-                    labelEn="Dark Mode"
+                    labelEn="ปรับหน้าจอให้ดูสบายตาตอนกลางคืน"
                     icon={Moon}
                     enabled={settings.darkMode}
                     onToggle={() => toggleSetting('darkMode')}
                 />
 
                 <SettingsToggle
-                    label="ปุ่ม SOS"
-                    labelEn="Emergency SOS"
+                    label="ปุ่มฉุกเฉิน SOS"
+                    labelEn="แสดงปุ่มขอความช่วยเหลือบนทุกหน้า"
                     icon={Shield}
                     enabled={settings.sosEnabled}
                     onToggle={() => toggleSetting('sosEnabled')}
@@ -290,36 +315,53 @@ export default function ProfileSettings({ onLogout, settings: settingsProp, onSe
             </div>
 
             {/* PIN Change */}
-            <div className="card">
-                <button
-                    onClick={() => {
-                        setPinChanged(true);
-                        setTimeout(() => setPinChanged(false), 2000);
-                    }}
-                    className="w-full flex items-center gap-4 active:scale-[0.98] transition-all"
-                >
+            <div className="card space-y-3">
+                <div className="flex items-center gap-4">
                     <div className="w-11 h-11 rounded-xl bg-serenity-blue-light flex items-center justify-center shrink-0">
                         <Shield size={22} className="text-serenity-blue" />
                     </div>
-                    <div className="flex-1 text-left">
-                        <p className="font-semibold text-ink">เปลี่ยนรหัส PIN</p>
-                        <p className="text-sm text-ink-lighter">Guardian Lock PIN</p>
+                    <div className="flex-1">
+                        <p className="font-semibold text-ink">รหัส PIN ผู้ดูแล</p>
+                        <p className="text-sm text-ink-lighter">ใช้ล็อคหน้าแดชบอร์ดผู้ดูแล</p>
                     </div>
-                    {pinChanged ? (
-                        <span className="text-serenity-green font-semibold text-sm">✓ สำเร็จ</span>
-                    ) : (
-                        <ChevronRight size={20} className="text-ink-lighter" />
-                    )}
-                </button>
+                    <button
+                        onClick={() => { setEditingPin(!editingPin); setTempPin(''); setPinError(''); }}
+                        className="text-saffron text-sm font-medium active:scale-95"
+                    >
+                        {editingPin ? 'ยกเลิก' : <><Edit3 size={15} className="inline mr-1" />แก้ไข</>}
+                    </button>
+                </div>
+                {editingPin ? (
+                    <div className="space-y-2 pt-1">
+                        <input
+                            type="password"
+                            inputMode="numeric"
+                            maxLength={6}
+                            placeholder="รหัส PIN ใหม่ (4–6 หลัก)"
+                            value={tempPin}
+                            onChange={(e) => setTempPin(e.target.value.replace(/\D/g, ''))}
+                            className="w-full py-3 px-4 rounded-xl border-2 border-cream-dark bg-cream text-lg text-ink text-center tracking-widest focus:border-saffron focus:outline-none"
+                        />
+                        {pinError && <p className="text-xs text-danger">{pinError}</p>}
+                        <button
+                            onClick={savePinHandler}
+                            className="w-full py-3 rounded-xl bg-saffron text-white font-semibold active:scale-95"
+                        >
+                            บันทึกรหัส PIN
+                        </button>
+                    </div>
+                ) : (
+                    <p className="text-sm text-ink-lighter px-1">PIN ปัจจุบัน: {'•'.repeat(caregiverPin.length)}</p>
+                )}
             </div>
 
             {/* App Info */}
             <div className="card text-center bg-cream">
                 <p className="text-xl mb-1">🙏</p>
                 <p className="font-bold text-saffron text-lg">NaMo Care</p>
-                <p className="text-ink-lighter text-sm">v1.0.0 Premium</p>
+                <p className="text-ink-lighter text-sm">เวอร์ชัน 1.0.0</p>
                 <p className="text-ink-lighter text-xs mt-1">
-                    Digital Health & Soul Guardian
+                    ดูแลสุขภาพกาย-ใจ ด้วยเทคโนโลยีและความเมตตา
                 </p>
                 <p className="text-ink-lighter text-xs">
                     ดูแลสุขภาพกายและใจ ด้วยความเมตตา 💛

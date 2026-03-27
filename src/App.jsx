@@ -236,7 +236,7 @@ export default function App() {
           {renderPage()}
         </PageTransition>
       </main>
-      <SOSButton />
+      {settings.sosEnabled !== false && <SOSButton />}
       <BottomNav active={activeTab} onNavigate={handleNavigate} alertCount={alertCount} />
     </div>
   );

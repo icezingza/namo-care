@@ -51,19 +51,21 @@ async function computeAndSaveRiskScore(db, userId) {
     });
     const currentScore = totalWeight > 0 ? Math.round(weighted / totalWeight) : 0;
     // Trend: compare last 3 days vs days 3-7
+    // If no older data exists we cannot determine direction — default to stable
     const midCutoff = firestore_1.Timestamp.fromMillis(Date.now() - 3 * 24 * 60 * 60 * 1000);
     const recentDocs = snap.docs.filter((d) => d.data().computedAt.toMillis() >= midCutoff.toMillis());
     const olderDocs = snap.docs.filter((d) => d.data().computedAt.toMillis() < midCutoff.toMillis());
-    const avgOf = (docs) => docs.length === 0
-        ? currentScore
-        : docs.reduce((s, d) => s + d.data().score, 0) / docs.length;
-    const recentAvg = avgOf(recentDocs);
-    const olderAvg = avgOf(olderDocs);
-    const trend = recentAvg - olderAvg > 10
-        ? "rising"
-        : olderAvg - recentAvg > 10
-            ? "falling"
-            : "stable";
+    let trend = "stable";
+    if (recentDocs.length > 0 && olderDocs.length > 0) {
+        const avg = (docs) => docs.reduce((s, d) => s + d.data().score, 0) / docs.length;
+        const recentAvg = avg(recentDocs);
+        const olderAvg = avg(olderDocs);
+        const diff = recentAvg - olderAvg;
+        if (diff > 10)
+            trend = "rising";
+        else if (diff < -10)
+            trend = "falling";
+    }
     await db
         .collection("users")
         .doc(userId)

@@ -7,8 +7,6 @@ import PinLock from './PinLock';
 
 const POLL_INTERVAL_MS = 30_000;
 
-const CAREGIVER_PIN = '5678';
-
 const SEVERITY_CONFIG = {
     critical: { bg: 'bg-danger-light', border: 'border-danger', text: 'text-danger', label: 'วิกฤต', icon: '🚨' },
     high: { bg: 'bg-warm-light', border: 'border-warm', text: 'text-warm', label: 'สูง', icon: '⚠️' },
@@ -151,13 +149,14 @@ function useLocalSummary() {
 
 export default function CaregiverDashboard() {
     const [unlocked, setUnlocked] = useState(false);
+    const [savedPin] = useLocalStorage('namo_caregiver_pin', '5678');
 
     if (!unlocked) {
         return (
             <PinLock
-                pin={CAREGIVER_PIN}
+                pin={savedPin}
                 title="แดชบอร์ดผู้ดูแล 👨‍👩‍👧"
-                hint={`PIN ผู้ดูแล: ${CAREGIVER_PIN}`}
+                hint="กรอก PIN ผู้ดูแล"
                 onUnlock={() => setUnlocked(true)}
             />
         );
