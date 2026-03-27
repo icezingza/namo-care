@@ -39,6 +39,37 @@ function OfflineBanner() {
   );
 }
 
+const CONSENT_KEY = 'namo_consent_v1';
+
+function ConsentModal({ onAccept }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/60 animate-fade-in-up">
+      <div className="w-full max-w-lg bg-white rounded-t-3xl p-6 space-y-4 shadow-2xl">
+        <div className="text-center">
+          <span className="text-5xl">🙏</span>
+          <h2 className="text-2xl font-bold text-ink mt-2">ยินดีต้อนรับสู่ NaMo Care</h2>
+          <p className="text-ink-lighter text-sm mt-1">ก่อนเริ่มใช้งาน ขอความยินยอมสักเล็กน้อยนะคะ</p>
+        </div>
+        <div className="bg-cream rounded-2xl p-4 space-y-3 text-base text-ink-light">
+          <p>📊 ข้อมูลสุขภาพ อารมณ์ และการทานยาจะถูกบันทึกในระบบ</p>
+          <p>👨‍👩‍👧 แชร์กับผู้ดูแลที่คุณเชื่อมไว้เท่านั้น</p>
+          <p>🔒 ข้อมูลถูกเข้ารหัสและเก็บปลอดภัยใน Firebase</p>
+          <p>↩️ ถอนการยินยอมได้ทุกเมื่อในหน้าตั้งค่า</p>
+        </div>
+        <button
+          onClick={onAccept}
+          className="w-full py-4 rounded-2xl bg-saffron text-white text-xl font-bold shadow-lg active:scale-95 transition-all"
+        >
+          ยินยอมและเริ่มใช้งาน 💛
+        </button>
+        <p className="text-center text-xs text-ink-lighter pb-1">
+          การใช้งานแอปถือว่ายินยอมตามนโยบายความเป็นส่วนตัว NaMo Care
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function BottomNav({ active, onNavigate, alertCount }) {
   return (
     <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-cream-dark z-40 dark:bg-ink/95 dark:border-ink-light/20">
@@ -125,6 +156,7 @@ export default function App() {
   const [settings, setSettings] = useLocalStorage('namo_settings', DEFAULT_SETTINGS);
   const [alertCount, setAlertCount] = useState(0);
   const [profile] = useLocalStorage('namo_profile', null);
+  const [consentGiven, setConsentGiven] = useLocalStorage(CONSENT_KEY, false);
   const isOnline = useOnlineStatus();
 
   // Apply dark mode class reactively
@@ -167,6 +199,7 @@ export default function App() {
   };
 
   if (!user) return <LoginScreen onLogin={handleLogin} />;
+  if (!consentGiven) return <ConsentModal onAccept={() => setConsentGiven(true)} />;
 
   const renderPage = () => {
     switch (activeTab) {

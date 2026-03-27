@@ -17,25 +17,28 @@ function getSessionId(userId: string): string {
 
 function buildAssistantReply(analysis: CombinedAnalysis, medicationTaken: boolean): string {
   if (analysis.intent === "medication_confirm") {
-    if (medicationTaken) {
-      return "Great. Your medication has been recorded. Thank you for confirming.";
-    }
-    return "Thank you. I noted your confirmation. If this was for medication, I can keep watching your schedule.";
+    return medicationTaken
+      ? "✅ บันทึกการทานยาแล้วนะคะ ขอบคุณที่แจ้งให้ทราบค่ะ 🙏"
+      : "ขอบคุณที่แจ้งนะคะ 💊 ถ้ายังไม่ได้ทาน อย่าลืมทานให้ครบด้วยนะคะ";
   }
 
-  if (analysis.emotionLabel === "distress") {
-    return "I hear that this feels heavy. You are not alone. I can notify your caregiver if you want immediate support.";
+  if (analysis.emergencyFlag || analysis.emotionLabel === "distress") {
+    return "หนูได้ยินค่ะ... รู้สึกอย่างนี้มันหนักมากเลยนะ 🙏\nไม่ต้องแบกรับคนเดียวนะคะ กำลังแจ้งผู้ดูแลให้รับทราบแล้วค่ะ";
   }
 
   if (analysis.emotionLabel === "sad") {
-    return "Thank you for sharing. I am here with you. Would you like to talk a little more about how you feel?";
+    return "ขอบคุณที่เล่าให้ฟังนะคะ 🤍 หนูอยู่ตรงนี้เสมอนะคะ\nวันนี้เป็นอย่างไรบ้างคะ อยากเล่าให้ฟังอีกไหมคะ?";
   }
 
   if (analysis.intent === "checkin_response") {
-    return "Thank you for checking in. I have updated your daily wellbeing status.";
+    return "ขอบคุณที่เช็กอินนะคะ 😊 บันทึกสุขภาพวันนี้เรียบร้อยแล้วค่ะ\nดูแลตัวเองด้วยนะคะ 🙏";
   }
 
-  return "Thank you for your message. I am here to chat and support you anytime.";
+  if (analysis.sentiment === "positive") {
+    return "ดีใจด้วยนะคะ 😊 ได้ยินแล้วก็รู้สึกดีตามเลยค่ะ 💛";
+  }
+
+  return "หนูรับทราบแล้วนะคะ 🙏 มีอะไรให้ช่วยเหลือบอกได้เลยค่ะ";
 }
 
 function toSeverity(score: number): Severity {

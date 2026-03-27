@@ -4,15 +4,23 @@ exports.dispatchCaregiverAlert = dispatchCaregiverAlert;
 const firebase_functions_1 = require("firebase-functions");
 const firestoreService_1 = require("../services/firestoreService");
 const lineService_1 = require("../services/lineService");
+const SEVERITY_LABEL = {
+    low: "ℹ️ ข้อมูล",
+    medium: "🔔 เฝ้าระวัง",
+    high: "⚠️ สำคัญ",
+    critical: "🚨 วิกฤต",
+};
+const TYPE_LABEL = {
+    emergency: "เหตุฉุกเฉิน",
+    inactivity: "ไม่มีความเคลื่อนไหว",
+    emotion: "สัญญาณอารมณ์",
+    medication_missed: "ลืมทานยา",
+    no_checkin: "ไม่ได้เช็กอิน",
+};
 function formatAlertMessage(payload) {
-    const severityMap = {
-        low: "Info",
-        medium: "Watch",
-        high: "High",
-        critical: "Critical"
-    };
-    const level = severityMap[payload.severity] || payload.severity;
-    return `NaMo Alert (${level})\n${payload.title}\n${payload.detail}`;
+    const level = SEVERITY_LABEL[payload.severity] || payload.severity;
+    const type = TYPE_LABEL[payload.type] || payload.type;
+    return `NaMo Care แจ้งเตือน\n${level} — ${type}\n\n${payload.title}\n${payload.detail}`;
 }
 async function dispatchCaregiverAlert(ctx, payload) {
     const alertId = await (0, firestoreService_1.createAlert)(ctx.db, payload);

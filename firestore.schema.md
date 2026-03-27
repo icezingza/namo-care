@@ -29,9 +29,12 @@ Required fields:
   - `reminderEnabled` boolean
   - `emotionAlertEnabled` boolean
 - `riskProfile` map:
-  - `currentScore` number (0-100)
-  - `trend` string (`improving` | `stable` | `declining`)
-  - `updatedAt` Timestamp
+  - `currentScore` number (0-100, weighted aggregate of behaviorSignals)
+  - `trend` string (`rising` | `stable` | `falling`)
+  - `computedAt` Timestamp
+  - `signalCount` number
+- `linkedCaregiverId` string | null (set by frontend caregiver linking)
+- `caregiverLineId` string | null (LINE User ID of linked caregiver, set by frontend)
 
 ## 2) `caregivers/{caregiverId}`
 
@@ -205,10 +208,41 @@ Fields:
 - `{medId}` boolean (one field per medication ID, true = taken)
 - `updatedAt` string (ISO 8601)
 
+## 12) `caregivers/{caregiverId}` — Frontend-Written Linking
+
+Purpose: Caregiver profile created/updated from the web app (ProfileSettings caregiver linking UI).
+Note: caregiverId = `cg_{userId}` when written by frontend (deterministic, idempotent).
+
+Required fields (frontend-written):
+
+- `lineUserId` string (caregiver's LINE User ID, entered by elderly user)
+- `linkedUserIds` string[] (contains the elderly user's anonymous Firebase UID)
+- `registeredAt` string (ISO 8601)
+
+Note: Backend webhook will look up caregivers via `linkedUserIds array-contains userId` — this allows
+frontend-linked caregivers to receive LINE Bot alerts automatically.
+
+## 13) `sos_events/{eventId}`
+
+Purpose: Emergency SOS events triggered from the web app's SOS button.
+Written by: Frontend app.
+
+Required fields:
+
+- `patient` map: `uid`, `displayName`, `lineId`
+- `caregiver` map: `emergencyPhone`
+- `vitals` map: latest BP/HR/bloodSugar values
+- `location` map: `status`, `latitude`, `longitude`, `accuracyMeters`, `error`
+- `lastSync` string
+- `triggeredBy` string (`elderly_app`)
+- `source` string (`line-liff`)
+- `triggeredAt` string (ISO 8601)
+
 ## Relationships
 
 - `users.caregiverIds[] -> caregivers`
 - `caregivers.linkedUserIds[] -> users`
+- `caregivers/{cg_userId}.linkedUserIds -> users` (frontend-written link)
 - `medicationSchedules.userId -> users`
 - `remindersLog.userId -> users`
 - `conversationLogs.userId -> users`
@@ -230,3 +264,18 @@ Fields:
 - Scheduler writes:
   - `remindersLog`
   - `dailyCheckins`
+  - `behaviorSignals` (medication_missed adherence signal)
+  - `alerts` (when medication missed threshold reached)
+  - `users.riskProfile` (computeAndSaveRiskScore after each signal)
+- Frontend writes:
+  - `users/{uid}/vitalRecords/`, `moodEntries/`, `medStatus/`
+  - `caregivers/{cg_uid}` (caregiver linking)
+  - `medicationSchedules` (add/edit/delete from MedicationManage)
+  - `sos_events` (SOS button)
+  - `alerts.status = acknowledged` (CaregiverDashboard acknowledge button)
+
+## Offline Sync Queue
+
+Frontend uses `namo_sync_queue` localStorage key to queue failed Firestore writes.
+Queue is flushed automatically when `navigator.onLine` transitions from false → true.
+Maximum 50 items kept in queue; FIFO eviction when full.
