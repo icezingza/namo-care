@@ -3,6 +3,7 @@ import {
     User, Phone, Shield, Bell, Moon,
     ChevronRight, Heart, LogOut, Edit3, Save, Link,
 } from 'lucide-react';
+import SmartWatchConnect from './SmartWatchConnect';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useUserProfile } from '../hooks/useUserProfile';
 import { DEFAULT_SETTINGS } from '../data/settings';
@@ -354,6 +355,9 @@ export default function ProfileSettings({ onLogout, settings: settingsProp, onSe
                     <p className="text-sm text-ink-lighter px-1">PIN ปัจจุบัน: {'•'.repeat(caregiverPin.length)}</p>
                 )}
             </div>
+
+            {/* Smart Watch */}
+            <SmartWatchConnect />
 
             {/* App Info */}
             <div className="card text-center bg-cream">

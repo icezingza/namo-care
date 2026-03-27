@@ -17,6 +17,7 @@ import { useLocalStorage } from './hooks/useLocalStorage';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { DEFAULT_SETTINGS } from './data/settings';
 import { getAlerts, getCurrentUserId, flushSyncQueue } from './firebase';
+import { PENDING_CODE_KEY, handleGoogleFitCallback } from './services/googleFitService';
 
 const tabs = [
   { key: 'home', label: 'หน้าหลัก', icon: Home },
@@ -164,6 +165,27 @@ export default function App() {
   useEffect(() => {
     document.documentElement.classList.toggle('dark', !!settings.darkMode);
   }, [settings.darkMode]);
+
+  // Capture Google Fit OAuth code from URL before login; process it after login
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    const verifier = localStorage.getItem('namo_gfit_verifier');
+    if (code && verifier) {
+      localStorage.setItem(PENDING_CODE_KEY, code);
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []); // run once on mount
+
+  useEffect(() => {
+    if (!user) return;
+    const pending = localStorage.getItem(PENDING_CODE_KEY);
+    if (!pending) return;
+    localStorage.removeItem(PENDING_CODE_KEY);
+    handleGoogleFitCallback(pending)
+      .then(() => setActiveTab('profile'))
+      .catch(() => {});
+  }, [user]);
 
   // Load open alert count after login — runs once per session
   useEffect(() => {
