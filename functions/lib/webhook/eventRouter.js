@@ -13,7 +13,10 @@ async function handleFollowEvent(ctx, event) {
     const userId = event.source.userId;
     const profile = await (0, lineService_1.getLineProfile)(ctx.lineClient, userId);
     await (0, firestoreService_1.ensureUser)(ctx.db, { userId, displayName: profile.displayName });
-    await (0, lineService_1.replyText)(ctx.lineClient, event.replyToken, "Welcome to NaMo Care Companion. I am here to support daily wellbeing and reminders.");
+    const greeting = profile.displayName
+        ? `สวัสดีคะ คุณ${profile.displayName} 🙏\n`
+        : "สวัสดีคะ 🙏\n";
+    await (0, lineService_1.replyText)(ctx.lineClient, event.replyToken, `${greeting}ยินดีต้อนรับสู่ NaMo Care นะคะ 💛\nหนูพร้อมช่วยดูแลสุขภาพประจำวัน แจ้งเตือนยา และรับฟังเสมอค่ะ\n\nลองพิมพ์ทักทายหรือบอกว่าวันนี้เป็นยังไงบ้างได้เลยนะคะ 😊`);
 }
 async function handleTextMessageEvent(ctx, event) {
     if (event.message.type !== "text")

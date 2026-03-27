@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Bell, Heart, Activity, Pill, RefreshCw, CheckCircle, AlertTriangle, Clock, Check } from 'lucide-react';
-import { getAlerts, getDailyCheckins, getBehaviorSignals, getCurrentUserId, acknowledgeAlert, getMedAdherenceWeekly } from '../firebase';
+import { Bell, Heart, Activity, Pill, RefreshCw, CheckCircle, AlertTriangle, Clock, Check, TrendingUp } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { getAlerts, getDailyCheckins, getBehaviorSignals, getCurrentUserId, acknowledgeAlert, getMedAdherenceWeekly, getRiskScoreHistory } from '../firebase';
 import { useLocalStorage, getTodayKey, formatThaiDate } from '../hooks/useLocalStorage';
 import PinLock from './PinLock';
 
@@ -96,6 +97,42 @@ function SignalBadge({ signal }) {
     );
 }
 
+const TH_DAY_SHORT = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
+
+function RiskTrendChart({ data }) {
+    if (!data || data.length === 0 || data.every((d) => d.score === null)) return null;
+    const filled = data.map((d) => ({ ...d, score: d.score ?? undefined, dayLabel: TH_DAY_SHORT[new Date(d.day + 'T12:00:00').getDay()] }));
+    return (
+        <div className="card">
+            <div className="flex items-center gap-2 mb-3">
+                <TrendingUp size={18} className="text-saffron" />
+                <span className="font-semibold text-ink">ความเสี่ยง 7 วัน</span>
+            </div>
+            <ResponsiveContainer width="100%" height={100}>
+                <LineChart data={filled} margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
+                    <XAxis dataKey="dayLabel" tick={{ fontSize: 11, fill: '#8B7355' }} axisLine={false} tickLine={false} />
+                    <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#B8A898' }} axisLine={false} tickLine={false} />
+                    <Tooltip
+                        formatter={(v) => [`${v}/100`, 'คะแนน']}
+                        labelFormatter={(l) => l}
+                        contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #E8DED0' }}
+                    />
+                    <ReferenceLine y={70} stroke="#E67E22" strokeDasharray="3 3" strokeOpacity={0.5} />
+                    <Line
+                        type="monotone"
+                        dataKey="score"
+                        stroke="#E67E22"
+                        strokeWidth={2}
+                        dot={{ fill: '#E67E22', r: 3 }}
+                        connectNulls={false}
+                    />
+                </LineChart>
+            </ResponsiveContainer>
+            <p className="text-xs text-ink-lighter mt-1 text-right">เส้นสีส้ม = ระดับเฝ้าระวัง (70)</p>
+        </div>
+    );
+}
+
 // Derive simple summary from localStorage data when Firestore data isn't available
 function useLocalSummary() {
     const todayKey = getTodayKey();
@@ -136,6 +173,7 @@ function CaregiverContent() {
     const [loading, setLoading] = useState(true);
     const [lastRefresh, setLastRefresh] = useState(null);
     const [adherence, setAdherence] = useState(null);
+    const [riskHistory, setRiskHistory] = useState([]);
     const { latestMood, takenCount, latestBP } = useLocalSummary();
     const pollRef = useRef(null);
 
@@ -143,16 +181,18 @@ function CaregiverContent() {
         if (!silent) setLoading(true);
         try {
             const uid = await getCurrentUserId();
-            const [a, c, s, adh] = await Promise.all([
+            const [a, c, s, adh, hist] = await Promise.all([
                 getAlerts(uid, 15),
                 getDailyCheckins(uid, 7),
                 getBehaviorSignals(uid, 8),
                 getMedAdherenceWeekly(uid),
+                getRiskScoreHistory(uid),
             ]);
             setAlerts(a);
             setCheckins(c);
             setSignals(s);
             if (adh) setAdherence(adh);
+            if (hist?.length) setRiskHistory(hist);
             setLastRefresh(new Date());
         } catch {
             // Fail silently — show local data only
@@ -235,6 +275,9 @@ function CaregiverContent() {
                     <p className="text-xs text-ink-lighter mt-1">บันทึกแล้ว {adherence.daysRecorded} วัน</p>
                 </div>
             )}
+
+            {/* Risk Score Trend */}
+            <RiskTrendChart data={riskHistory} />
 
             {/* Active Alerts */}
             <div className="space-y-3">

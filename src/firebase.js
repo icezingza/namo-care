@@ -443,6 +443,32 @@ export async function updateMedicationSchedule(scheduleId, userId, form) {
   }
 }
 
+export async function getRiskScoreHistory(userId) {
+  if (!isFirebaseConfigured()) return [];
+  try {
+    const signals = await queryTopLevel('behaviorSignals', [['userId', '==', userId]], 'computedAt', 42);
+    // Group scores by day (YYYY-MM-DD), take average per day
+    const byDay = {};
+    for (const s of signals) {
+      const day = (s.computedAt || '').slice(0, 10);
+      if (!day) continue;
+      if (!byDay[day]) byDay[day] = { total: 0, count: 0 };
+      byDay[day].total += s.score ?? 0;
+      byDay[day].count += 1;
+    }
+    // Build last-7-days array
+    const result = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const day = d.toISOString().slice(0, 10);
+      const entry = byDay[day];
+      result.push({ day, score: entry ? Math.round(entry.total / entry.count) : null });
+    }
+    return result;
+  } catch { return []; }
+}
+
 export async function saveSOSAlert(payload) {
   const document = { ...payload, source: 'line-liff', triggeredAt: new Date().toISOString() };
   if (!isFirebaseConfigured()) {

@@ -12,10 +12,13 @@ async function handleFollowEvent(ctx: AppContext, event: FollowEvent): Promise<v
   const userId = event.source.userId;
   const profile = await getLineProfile(ctx.lineClient, userId);
   await ensureUser(ctx.db, { userId, displayName: profile.displayName });
+  const greeting = profile.displayName
+    ? `สวัสดีคะ คุณ${profile.displayName} 🙏\n`
+    : "สวัสดีคะ 🙏\n";
   await replyText(
     ctx.lineClient,
     event.replyToken,
-    "Welcome to NaMo Care Companion. I am here to support daily wellbeing and reminders."
+    `${greeting}ยินดีต้อนรับสู่ NaMo Care นะคะ 💛\nหนูพร้อมช่วยดูแลสุขภาพประจำวัน แจ้งเตือนยา และรับฟังเสมอค่ะ\n\nลองพิมพ์ทักทายหรือบอกว่าวันนี้เป็นยังไงบ้างได้เลยนะคะ 😊`
   );
 }
 
