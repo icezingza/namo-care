@@ -18,6 +18,8 @@ Required fields:
 - `status` string (`active` | `paused` | `inactive`)
 - `registeredAt` Timestamp
 - `lastActiveAt` Timestamp
+- `monitoring` map (written by schedulers):
+  - `lastInactivityAlertAt` Timestamp | null (set by inactivityWatcher after each alert)
 - `consent` map:
   - `elderlyAcceptedAt` Timestamp | null
   - `caregiverAcceptedAt` Timestamp | null
@@ -107,6 +109,7 @@ Required fields:
   - `emotionLabel` string (`happy` | `neutral` | `sad` | `distress`)
   - `emotionScore` number (`0..1`)
   - `emergencyFlag` boolean
+  - `emergencySeverity` string | null (`critical` | `high` | null)
   - `riskKeywords` string[]
 
 ## 6) `behaviorSignals/{signalId}`
@@ -139,11 +142,15 @@ Required fields:
 - `sourceMessage` string | null
 - `triggeredAt` Timestamp
 - `sentAt` Timestamp | null
-- `status` string (`open` | `acknowledged` | `resolved`)
+- `status` string (`open` | `sent` | `acknowledged` | `resolved`)
+  - `open` — created, not yet dispatched to LINE
+  - `sent` — LINE notification delivered to caregiver(s)
+  - `acknowledged` — caregiver has acknowledged the alert
+  - `resolved` — alert resolved
 - `acknowledgedBy` string | null
 - `acknowledgedAt` Timestamp | null
 - `resolvedAt` Timestamp | null
-- `dedupeKey` string
+- `dedupeKey` string (format: `{userId}:{type}:{YYYY-MM-DDTHH}` — hourly deduplication key)
 
 ## 8) `dailyCheckins/{checkinId}`
 
@@ -262,11 +269,20 @@ Required fields:
   - `remindersLog.status` on medication confirmation
   - `dailyCheckins.status` on check-in reply
 - Scheduler writes:
-  - `remindersLog`
-  - `dailyCheckins`
-  - `behaviorSignals` (medication_missed adherence signal)
-  - `alerts` (when medication missed threshold reached)
-  - `users.riskProfile` (computeAndSaveRiskScore after each signal)
+  - `remindersLog` (medicationScheduler)
+  - `dailyCheckins` (dailyCheckinScheduler)
+  - `behaviorSignals`:
+    - `adherence` signal — medicationScheduler on missed medication
+    - `checkin` signal — checkinWatcher on no-response (score=70, severity=medium)
+    - `silence` signal — inactivityWatcher (score=50+5×hours capped at 90, severity escalates to high at ≥12h)
+  - `alerts`:
+    - `medication_missed` — medicationScheduler when threshold reached
+    - `no_checkin` — checkinWatcher after 2h no-response window
+    - `inactivity` — inactivityWatcher after per-user threshold (default 6h), cooldown 6h
+  - `users.riskProfile` — computeAndSaveRiskScore triggered fire-and-forget after each signal
+  - `users.monitoring.lastInactivityAlertAt` — inactivityWatcher cooldown tracking
+  - `dailyCheckins.status = "no_response"` — checkinWatcher escalation
+  - LINE Flex Message — dailySummaryScheduler sends yesterday recap to all caregivers at 08:00 Bangkok
 - Frontend writes:
   - `users/{uid}/vitalRecords/`, `moodEntries/`, `medStatus/`
   - `caregivers/{cg_uid}` (caregiver linking)
