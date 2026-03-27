@@ -108,7 +108,7 @@ const TREND_EMOJI: Record<string, string> = {
 
 const TH_MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 
-function buildSummaryFlex(name: string, dateKey: string, data: SummaryData): unknown {
+export function buildSummaryFlex(name: string, dateKey: string, data: SummaryData): unknown {
   const [y, m, d] = dateKey.split("-").map(Number);
   const displayDate = `${d} ${TH_MONTHS[m - 1]} ${y + 543}`;
 

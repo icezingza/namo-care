@@ -35,7 +35,7 @@ function getJsonBody<T>(req: Request): T {
   return (req.body || {}) as T;
 }
 
-function assertPost(req: Request, res: Response): boolean {
+export function assertPost(req: Request, res: Response): boolean {
   if (req.method !== "POST") {
     res.status(405).json({ ok: false, error: "Use POST" });
     return false;
@@ -43,7 +43,7 @@ function assertPost(req: Request, res: Response): boolean {
   return true;
 }
 
-function authorizeLocalTest(req: Request, res: Response): boolean {
+export function authorizeLocalTest(req: Request, res: Response): boolean {
   const configuredKey = process.env.LOCAL_TEST_KEY;
   if (!configuredKey) {
     res.status(503).json({
