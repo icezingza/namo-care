@@ -1,5 +1,5 @@
 import type { Firestore } from "firebase-admin/firestore";
-import { FieldValue, Timestamp } from "firebase-admin/firestore";
+import { Timestamp } from "firebase-admin/firestore";
 import type { AlertPayload, CombinedAnalysis, Severity } from "../types";
 
 interface EnsureUserInput {
@@ -206,15 +206,3 @@ export async function updateDailyCheckinResponse(db: Firestore, userId: string, 
   });
 }
 
-export async function appendUserRiskScore(db: Firestore, userId: string, scoreDelta: number): Promise<void> {
-  await db.collection("users").doc(userId).set(
-    {
-      riskProfile: {
-        updatedAt: Timestamp.now(),
-        latestDelta: scoreDelta
-      },
-      updatedAt: FieldValue.serverTimestamp()
-    },
-    { merge: true }
-  );
-}

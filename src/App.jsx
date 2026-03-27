@@ -12,6 +12,7 @@ import MeditationTimer from './components/MeditationTimer';
 import RecordVitals from './components/RecordVitals';
 import ProfileSettings from './components/ProfileSettings';
 import CaregiverDashboard from './components/CaregiverDashboard';
+import SOSButton from './components/SOSButton';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { DEFAULT_SETTINGS } from './data/settings';
@@ -235,6 +236,7 @@ export default function App() {
           {renderPage()}
         </PageTransition>
       </main>
+      <SOSButton />
       <BottomNav active={activeTab} onNavigate={handleNavigate} alertCount={alertCount} />
     </div>
   );

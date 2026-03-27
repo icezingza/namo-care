@@ -76,11 +76,12 @@ export async function handleUserMessage(
   const riskScore = Math.round(analysis.emotionScore * 100);
 
   if (analysis.emergencyFlag) {
-    await createBehaviorSignal(ctx.db, userId, "emotion", 100, "critical", [userLogId]);
+    const emergSeverity = analysis.emergencySeverity ?? "critical";
+    await createBehaviorSignal(ctx.db, userId, "emotion", 100, emergSeverity, [userLogId]);
     await dispatchCaregiverAlert(ctx, {
       userId,
       type: "emergency",
-      severity: "critical",
+      severity: emergSeverity,
       title: "ผู้สูงอายุส่งสัญญาณขอความช่วยเหลือ",
       detail: "พบคำขอความช่วยเหลือฉุกเฉินในข้อความ กรุณาติดต่อกลับทันที",
       sourceMessage: text

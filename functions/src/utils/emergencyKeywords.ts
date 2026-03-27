@@ -1,32 +1,55 @@
-const EMERGENCY_KEYWORDS = [
-  "help",
-  "emergency",
-  "not well",
-  "dizzy",
-  "pain",
+// Critical: life-threatening symptoms → severity "critical"
+const CRITICAL_KEYWORDS = [
+  "เจ็บหน้าอก",
+  "หายใจไม่ออก",
+  "หมดสติ",
+  "เป็นลม",
+  "ล้มหมดสติ",
+  "อัมพาต",
+  "ปากเบี้ยว",
+  "แขนอ่อนแรง",
   "chest pain",
   "can't breathe",
-  "cannot breathe",
   "fainted",
-  "fell",
+  "unconscious"
+];
+
+// High: urgent symptoms that need immediate attention
+const HIGH_KEYWORDS = [
   "ช่วยด้วย",
   "ฉุกเฉิน",
   "ไม่ไหว",
-  "เวียนหัว",
-  "เจ็บ",
-  "เจ็บหน้าอก",
-  "หายใจไม่ออก",
+  "เวียนหัวมาก",
   "ล้ม",
-  "หมดสติ",
+  "ล้มหัวฟาด",
+  "เจ็บมาก",
+  "ปวดอย่างรุนแรง",
+  "มือชา",
+  "ตาพร่า",
+  "ขาอ่อน",
   "โทรหมอ",
-  "เรียกรถพยาบาล"
+  "เรียกรถพยาบาล",
+  "help",
+  "emergency",
+  "fell",
+  "dizzy"
 ];
 
-export function detectEmergencyKeyword(input: string): { matched: boolean; keywords: string[] } {
-  const normalized = input.toLowerCase().trim();
-  const keywords = EMERGENCY_KEYWORDS.filter((kw) => normalized.includes(kw));
-  return {
-    matched: keywords.length > 0,
-    keywords
-  };
+export function detectEmergencyKeyword(
+  input: string
+): { matched: boolean; keywords: string[]; severity: "critical" | "high" | null } {
+  // Thai has no case; toLowerCase only affects ASCII/English portions
+  const text = input.toLowerCase().trim();
+
+  const criticalMatches = CRITICAL_KEYWORDS.filter((kw) => text.includes(kw.toLowerCase()));
+  if (criticalMatches.length > 0) {
+    return { matched: true, keywords: criticalMatches, severity: "critical" };
+  }
+
+  const highMatches = HIGH_KEYWORDS.filter((kw) => text.includes(kw.toLowerCase()));
+  if (highMatches.length > 0) {
+    return { matched: true, keywords: highMatches, severity: "high" };
+  }
+
+  return { matched: false, keywords: [], severity: null };
 }

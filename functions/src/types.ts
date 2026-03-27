@@ -17,6 +17,7 @@ export interface IntentAnalysis {
 
 export interface CombinedAnalysis extends EmotionAnalysis, IntentAnalysis {
   emergencyFlag: boolean;
+  emergencySeverity: "critical" | "high" | null;
 }
 
 export interface AppContext {

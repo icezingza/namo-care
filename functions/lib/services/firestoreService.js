@@ -10,7 +10,6 @@ exports.markAlertSent = markAlertSent;
 exports.getCaregiverLineIds = getCaregiverLineIds;
 exports.markLatestMedicationTaken = markLatestMedicationTaken;
 exports.updateDailyCheckinResponse = updateDailyCheckinResponse;
-exports.appendUserRiskScore = appendUserRiskScore;
 const firestore_1 = require("firebase-admin/firestore");
 async function ensureUser(db, input) {
     const ref = db.collection("users").doc(input.userId);
@@ -171,14 +170,5 @@ async function updateDailyCheckinResponse(db, userId, responseText) {
         },
         updatedAt: firestore_1.Timestamp.now()
     });
-}
-async function appendUserRiskScore(db, userId, scoreDelta) {
-    await db.collection("users").doc(userId).set({
-        riskProfile: {
-            updatedAt: firestore_1.Timestamp.now(),
-            latestDelta: scoreDelta
-        },
-        updatedAt: firestore_1.FieldValue.serverTimestamp()
-    }, { merge: true });
 }
 //# sourceMappingURL=firestoreService.js.map
