@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.testCaregiverAlert = exports.testMedicationReminder = exports.seedCaregiverLink = exports.healthCheck = void 0;
+exports.assertPost = assertPost;
+exports.authorizeLocalTest = authorizeLocalTest;
 const https_1 = require("firebase-functions/v2/https");
 const firestore_1 = require("firebase-admin/firestore");
 const bootstrap_1 = require("../bootstrap");
