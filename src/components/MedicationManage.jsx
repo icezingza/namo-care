@@ -2,7 +2,10 @@ import { useState, useEffect } from 'react';
 import { Plus, Trash2, Save, ArrowLeft, Pill, Check } from 'lucide-react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { medications as mockMedications } from '../data/mockData';
-import { getMedicationSchedules, getCurrentUserId, db, isFirebaseConfigured } from '../firebase';
+import {
+    getMedicationSchedules, getCurrentUserId, db, isFirebaseConfigured,
+    deleteMedicationSchedule, updateMedicationSchedule,
+} from '../firebase';
 
 const TIME_OPTIONS = ['06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00', '22:00'];
 const ICON_OPTIONS = ['💊', '❤️', '☀️', '🛡️', '💉', '🌿', '💧', '⚡'];
@@ -146,6 +149,10 @@ export default function MedicationManage({ onBack }) {
     const handleSaveEdit = (form) => {
         const updated = medList.map((m) => m.id === editing.id ? { ...m, ...form } : m);
         setMedications(updated);
+        // Sync to Firestore if the med has a remote ID (not local_*)
+        if (editing.id && !editing.id.startsWith('local_') && isFirebaseConfigured()) {
+            updateMedicationSchedule(editing.id, userId, form);
+        }
         setEditing(null);
     };
 
@@ -154,6 +161,10 @@ export default function MedicationManage({ onBack }) {
         setTimeout(() => {
             setMedications(medList.filter((m) => m.id !== id));
             setDeletingId(null);
+            // Delete from Firestore if it was a remote doc
+            if (id && !id.startsWith('local_') && isFirebaseConfigured()) {
+                deleteMedicationSchedule(id);
+            }
         }, 300);
     };
 

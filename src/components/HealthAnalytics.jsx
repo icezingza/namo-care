@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid,
-    Tooltip, ResponsiveContainer, Legend, Area, AreaChart,
+    Tooltip, ResponsiveContainer, Legend, Area, AreaChart, BarChart, Bar, Cell,
 } from 'recharts';
-import { TrendingUp, Heart, Brain, RefreshCw } from 'lucide-react';
-import { bloodPressureHistory, moodHistory } from '../data/mockData';
+import { TrendingUp, Heart, Brain, RefreshCw, Pill } from 'lucide-react';
+import { bloodPressureHistory, moodHistory, medications as mockMedications } from '../data/mockData';
 import PinLock from './PinLock';
 import { getVitalHistory as fetchVitalHistory, getMoodHistory as fetchMoodHistory, getCurrentUserId as fetchUserId } from '../firebase';
 
@@ -113,6 +113,57 @@ function MoodChart({ data }) {
     );
 }
 
+function buildAdherenceData() {
+    const result = [];
+    for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const dateKey = d.toISOString().slice(0, 10);
+        let taken = 0;
+        const total = mockMedications.length;
+        try {
+            const raw = window.localStorage.getItem(`namo_meds_${dateKey}`);
+            if (raw) {
+                taken = Object.values(JSON.parse(raw)).filter(Boolean).length;
+            }
+        } catch { /* ignore */ }
+        result.push({ day: DAY_TH[d.getDay()], taken, total, pct: total > 0 ? Math.round((taken / total) * 100) : 0 });
+    }
+    return result;
+}
+
+function AdherenceChart({ data }) {
+    const avgPct = data.length ? Math.round(data.reduce((s, d) => s + d.pct, 0) / data.length) : 0;
+    return (
+        <div className="card">
+            <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                    <Pill size={22} className="text-saffron" />
+                    <h3 className="text-lg font-bold text-ink">การทานยา 7 วัน</h3>
+                </div>
+                <span className={`text-base font-bold ${avgPct >= 80 ? 'text-serenity-green' : 'text-warm'}`}>
+                    เฉลี่ย {avgPct}%
+                </span>
+            </div>
+            <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={data} barSize={28}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#F0ECE3" vertical={false} />
+                    <XAxis dataKey="day" tick={{ fontSize: 13, fill: '#5D6D7E' }} tickLine={false} axisLine={false} />
+                    <YAxis domain={[0, 100]} tick={{ fontSize: 12, fill: '#5D6D7E' }} tickLine={false} axisLine={false}
+                        tickFormatter={(v) => `${v}%`} />
+                    <Tooltip formatter={(v) => [`${v}%`, 'ทานยา']} labelFormatter={(l) => `วัน ${l}`} />
+                    <Bar dataKey="pct" radius={[6, 6, 0, 0]}>
+                        {data.map((entry, i) => (
+                            <Cell key={i} fill={entry.pct >= 80 ? '#27AE60' : entry.pct >= 50 ? '#E67E22' : '#E74C3C'} />
+                        ))}
+                    </Bar>
+                </BarChart>
+            </ResponsiveContainer>
+            <p className="text-xs text-ink-lighter mt-2 text-center">🟢 ≥80% · 🟠 50-79% · 🔴 &lt;50%</p>
+        </div>
+    );
+}
+
 function buildBPChart(vitalRecords) {
     const bpRecords = vitalRecords.filter((r) => r.type === 'bloodPressure');
     if (bpRecords.length < 2) return null;
@@ -169,6 +220,7 @@ export default function HealthAnalytics() {
     const [loading, setLoading] = useState(false);
     const [bpData, setBpData] = useState(bloodPressureHistory);
     const [moodData, setMoodData] = useState(moodHistory);
+    const [adherenceData] = useState(() => buildAdherenceData());
     const [avgBPVal, setAvgBPVal] = useState('128/82');
     const [avgMoodVal, setAvgMoodVal] = useState('3.4');
     const [hasRealData, setHasRealData] = useState(false);
@@ -230,6 +282,7 @@ export default function HealthAnalytics() {
             <div className="space-y-5 stagger-children">
                 <BPChart data={bpData} />
                 <MoodChart data={moodData} />
+                <AdherenceChart data={adherenceData} />
             </div>
 
             {!hasRealData && (

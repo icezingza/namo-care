@@ -1,12 +1,12 @@
 import { analyzeMessage } from "../ai/emotionAnalyzer";
 import type { AppContext, CombinedAnalysis, Severity } from "../types";
 import {
-  appendUserRiskScore,
   createBehaviorSignal,
   markLatestMedicationTaken,
   saveConversationLog,
   updateDailyCheckinResponse
 } from "../services/firestoreService";
+import { computeAndSaveRiskScore } from "../services/riskScoreService";
 import { dispatchCaregiverAlert } from "../notifications/alertDispatcher";
 import { replyText } from "../services/lineService";
 
@@ -74,7 +74,6 @@ export async function handleUserMessage(
   if (analysis.emotionLabel === "sad" || analysis.emotionLabel === "distress") {
     const severity = toSeverity(riskScore);
     await createBehaviorSignal(ctx.db, userId, "emotion", riskScore, severity, [userLogId]);
-    await appendUserRiskScore(ctx.db, userId, riskScore);
 
     if (analysis.emotionLabel === "distress" && riskScore >= 80) {
       await dispatchCaregiverAlert(ctx, {
@@ -87,6 +86,9 @@ export async function handleUserMessage(
       });
     }
   }
+
+  // Recompute aggregate risk score after each message (fire-and-forget)
+  computeAndSaveRiskScore(ctx.db, userId).catch(() => undefined);
 
   const reply = buildAssistantReply(analysis, medicationTaken);
   await replyText(ctx.lineClient, replyToken, reply);

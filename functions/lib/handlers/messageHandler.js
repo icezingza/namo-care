@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.handleUserMessage = handleUserMessage;
 const emotionAnalyzer_1 = require("../ai/emotionAnalyzer");
 const firestoreService_1 = require("../services/firestoreService");
+const riskScoreService_1 = require("../services/riskScoreService");
 const alertDispatcher_1 = require("../notifications/alertDispatcher");
 const lineService_1 = require("../services/lineService");
 function getSessionId(userId) {
@@ -55,7 +56,6 @@ async function handleUserMessage(ctx, userId, replyToken, text) {
     if (analysis.emotionLabel === "sad" || analysis.emotionLabel === "distress") {
         const severity = toSeverity(riskScore);
         await (0, firestoreService_1.createBehaviorSignal)(ctx.db, userId, "emotion", riskScore, severity, [userLogId]);
-        await (0, firestoreService_1.appendUserRiskScore)(ctx.db, userId, riskScore);
         if (analysis.emotionLabel === "distress" && riskScore >= 80) {
             await (0, alertDispatcher_1.dispatchCaregiverAlert)(ctx, {
                 userId,
@@ -67,6 +67,8 @@ async function handleUserMessage(ctx, userId, replyToken, text) {
             });
         }
     }
+    // Recompute aggregate risk score after each message (fire-and-forget)
+    (0, riskScoreService_1.computeAndSaveRiskScore)(ctx.db, userId).catch(() => undefined);
     const reply = buildAssistantReply(analysis, medicationTaken);
     await (0, lineService_1.replyText)(ctx.lineClient, replyToken, reply);
     await (0, firestoreService_1.saveConversationLog)(ctx.db, {

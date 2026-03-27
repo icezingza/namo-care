@@ -15,7 +15,7 @@ import CaregiverDashboard from './components/CaregiverDashboard';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { DEFAULT_SETTINGS } from './data/settings';
-import { getAlerts, getCurrentUserId } from './firebase';
+import { getAlerts, getCurrentUserId, flushSyncQueue } from './firebase';
 
 const tabs = [
   { key: 'home', label: 'หน้าหลัก', icon: Home },
@@ -143,6 +143,13 @@ export default function App() {
       } catch { /* no alerts if Firestore unavailable */ }
     });
   }, [user]);
+
+  // Flush queued offline writes when connection is restored
+  useEffect(() => {
+    if (isOnline && user) {
+      flushSyncQueue().catch(() => undefined);
+    }
+  }, [isOnline, user]);
 
   const handleLogin = (userData) => setUser(userData);
 

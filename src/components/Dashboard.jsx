@@ -67,40 +67,66 @@ function getEmergencyPhone() {
   }
 }
 
-async function getLocationSnapshot() {
-  if (typeof navigator === 'undefined' || !navigator.geolocation) {
-    return {
-      status: 'unavailable',
-      latitude: null,
-      longitude: null,
-      accuracyMeters: null,
-      error: 'geolocation_not_supported',
-    };
-  }
-
-  return new Promise((resolve) => {
+function singleGeoAttempt(timeout) {
+  return new Promise((resolve, reject) => {
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        resolve({
-          status: 'ok',
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracyMeters: Math.round(position.coords.accuracy),
-          error: null,
-        });
-      },
-      (error) => {
-        resolve({
-          status: 'error',
-          latitude: null,
-          longitude: null,
-          accuracyMeters: null,
-          error: error.message || 'location_error',
-        });
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+      (pos) => resolve({
+        status: 'ok',
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+        accuracyMeters: Math.round(pos.coords.accuracy),
+        error: null,
+      }),
+      (err) => reject(err),
+      { enableHighAccuracy: true, timeout, maximumAge: 30000 },
     );
   });
+}
+
+async function getLocationSnapshot() {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) {
+    return { status: 'unavailable', latitude: null, longitude: null, accuracyMeters: null, error: 'geolocation_not_supported' };
+  }
+  const timeouts = [8000, 12000, 16000];
+  for (const timeout of timeouts) {
+    try {
+      return await singleGeoAttempt(timeout);
+    } catch { /* retry */ }
+  }
+  // All attempts exhausted — return degraded payload (no lat/lng)
+  return { status: 'error', latitude: null, longitude: null, accuracyMeters: null, error: 'location_unavailable_after_retries' };
+}
+
+function useHealthScore(todayKey, takenMeds, vitals) {
+  const [moodLog] = useLocalStorage('namo_mood_log', []);
+  const [glasses] = useLocalStorage(`namo_water_${todayKey}`, 0);
+
+  return useMemo(() => {
+    let score = 0;
+
+    // Vitals (30 pts)
+    const { systolic, diastolic } = vitals.bloodPressure;
+    score += systolic < 140 && diastolic < 90 ? 30 : systolic < 160 ? 15 : 0;
+
+    // Medication (30 pts)
+    const totalMeds = mockMedications.length;
+    const taken = Object.values(takenMeds).filter(Boolean).length;
+    score += totalMeds > 0 ? Math.round((taken / totalMeds) * 30) : 30;
+
+    // Mood (25 pts)
+    const todayMood = moodLog.find((e) => e.dateKey === todayKey);
+    const moodPts = { happy: 25, neutral: 15, anxious: 10, sad: 8, pain: 5 };
+    score += todayMood ? (moodPts[todayMood.mood] || 10) : 0;
+
+    // Water (15 pts)
+    score += Math.round(Math.min(glasses / 8, 1) * 15);
+
+    const pct = Math.min(score, 100);
+    const label = pct >= 80 ? 'ดีมาก' : pct >= 60 ? 'ดี' : pct >= 40 ? 'พอใช้' : 'ต้องดูแล';
+    const emoji = pct >= 80 ? '🌟' : pct >= 60 ? '😊' : pct >= 40 ? '😐' : '⚠️';
+    const color = pct >= 80 ? 'text-serenity-green' : pct >= 60 ? 'text-saffron' : 'text-warm';
+    return { pct, label, emoji, color };
+  }, [moodLog, takenMeds, glasses, vitals, todayKey]);
 }
 
 function TodayOverview({ onNavigate }) {
@@ -109,8 +135,9 @@ function TodayOverview({ onNavigate }) {
   const [takenMeds] = useLocalStorage(`namo_meds_${todayKey}`, {});
   const [glasses] = useLocalStorage(`namo_water_${todayKey}`, 0);
 
+  // Fix: use dateKey (not date) — matches MoodTracker entry shape
   const todayMoodCount = useMemo(
-    () => moodLog.filter((e) => e.date === todayKey).length,
+    () => moodLog.filter((e) => e.dateKey === todayKey).length,
     [moodLog, todayKey]
   );
   const takenCount = Object.values(takenMeds).filter(Boolean).length;
@@ -268,6 +295,7 @@ export default function Dashboard({ user, onNavigate }) {
   const emergencyPhone = getEmergencyPhone();
   const vitals = useLatestVitals();
   const [profile] = useUserProfile();
+  const healthScore = useHealthScore(getTodayKey(), takenMeds, vitals);
 
   const handleMedConfirm = () => {
     // Mark the first untaken mock medication as taken
@@ -469,6 +497,27 @@ export default function Dashboard({ user, onNavigate }) {
           <Pill size={32} />
           <span>{medConfirm ? 'บันทึกแล้ว ✓' : 'ทานยาแล้ว'}</span>
         </button>
+      </div>
+
+      {/* Composite health score */}
+      <div className="card flex items-center gap-4 bg-gradient-to-r from-saffron-50/60 to-warm-light/40">
+        <div className="relative w-16 h-16 shrink-0">
+          <svg className="w-16 h-16 -rotate-90" viewBox="0 0 64 64">
+            <circle cx="32" cy="32" r="26" fill="none" stroke="#F0ECE3" strokeWidth="8" />
+            <circle cx="32" cy="32" r="26" fill="none" stroke="#E67E22" strokeWidth="8"
+              strokeDasharray={`${2 * Math.PI * 26}`}
+              strokeDashoffset={`${2 * Math.PI * 26 * (1 - healthScore.pct / 100)}`}
+              strokeLinecap="round" className="transition-all duration-700" />
+          </svg>
+          <span className="absolute inset-0 flex items-center justify-center text-lg font-bold text-ink">
+            {healthScore.pct}
+          </span>
+        </div>
+        <div>
+          <p className="text-sm text-ink-lighter">สุขภาพวันนี้</p>
+          <p className={`text-xl font-bold ${healthScore.color}`}>{healthScore.emoji} {healthScore.label}</p>
+          <p className="text-xs text-ink-lighter mt-0.5">จากค่าชีพจร · ยา · อารมณ์ · น้ำ</p>
+        </div>
       </div>
 
       <TodayOverview onNavigate={onNavigate} />

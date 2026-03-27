@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import {
     User, Phone, Shield, Bell, Moon,
-    ChevronRight, Heart, LogOut, Edit3, Save,
+    ChevronRight, Heart, LogOut, Edit3, Save, Link,
 } from 'lucide-react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useUserProfile } from '../hooks/useUserProfile';
 import { DEFAULT_SETTINGS } from '../data/settings';
+import { saveCaregiverLink, getCurrentUserId } from '../firebase';
 
 // eslint-disable-next-line no-unused-vars
 function SettingsToggle({ label, labelEn, icon: SettingIcon, enabled, onToggle }) {
@@ -55,6 +56,23 @@ export default function ProfileSettings({ onLogout, settings: settingsProp, onSe
     const [editingContact, setEditingContact] = useState(false);
     const [tempContact, setTempContact] = useState(emergencyContact);
     const [pinChanged, setPinChanged] = useState(false);
+
+    const [caregiverLineId, setCaregiverLineId] = useLocalStorage('namo_caregiver_line_id', '');
+    const [editingCaregiver, setEditingCaregiver] = useState(false);
+    const [tempCaregiverId, setTempCaregiverId] = useState(caregiverLineId);
+    const [caregiverSaving, setCaregiverSaving] = useState(false);
+
+    const saveCaregiverLinkHandler = async () => {
+        if (!tempCaregiverId.trim()) return;
+        setCaregiverSaving(true);
+        try {
+            const uid = await getCurrentUserId();
+            await saveCaregiverLink(uid, tempCaregiverId.trim());
+            setCaregiverLineId(tempCaregiverId.trim());
+        } catch { /* fallback to local only */ }
+        setCaregiverSaving(false);
+        setEditingCaregiver(false);
+    };
 
     const toggleSetting = (key) => {
         setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -191,6 +209,53 @@ export default function ProfileSettings({ onLogout, settings: settingsProp, onSe
                             <Phone size={18} className="text-ink-lighter" />
                             <span className="text-ink font-semibold text-lg">{emergencyContact.phone}</span>
                         </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Caregiver Linking */}
+            <div className="card">
+                <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-bold text-ink text-lg flex items-center gap-2">
+                        <Link size={20} className="text-serenity-blue" />
+                        เชื่อมผู้ดูแล
+                    </h3>
+                    <button
+                        onClick={() => {
+                            if (editingCaregiver) saveCaregiverLinkHandler();
+                            else { setTempCaregiverId(caregiverLineId); setEditingCaregiver(true); }
+                        }}
+                        disabled={caregiverSaving}
+                        className="flex items-center gap-1 text-saffron font-medium text-sm active:scale-95 disabled:opacity-50"
+                    >
+                        {editingCaregiver
+                            ? (caregiverSaving ? 'กำลังบันทึก...' : <><Save size={16} /> บันทึก</>)
+                            : <><Edit3 size={16} /> แก้ไข</>}
+                    </button>
+                </div>
+                {editingCaregiver ? (
+                    <div className="space-y-2">
+                        <label className="text-sm text-ink-lighter block">LINE User ID ของผู้ดูแล</label>
+                        <input
+                            type="text"
+                            value={tempCaregiverId}
+                            onChange={(e) => setTempCaregiverId(e.target.value)}
+                            placeholder="เช่น Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                            className="w-full py-3 px-4 rounded-xl border-2 border-cream-dark bg-cream text-base text-ink focus:border-saffron focus:outline-none"
+                        />
+                        <p className="text-xs text-ink-lighter">LINE User ID ขึ้นต้นด้วย "U" ตามด้วยตัวเลข 32 หลัก</p>
+                    </div>
+                ) : (
+                    <div className="flex items-center gap-3 py-1">
+                        <Heart size={18} className="text-serenity-green shrink-0" />
+                        {caregiverLineId ? (
+                            <div>
+                                <p className="text-ink text-sm font-medium">เชื่อมแล้ว ✓</p>
+                                <p className="text-ink-lighter text-xs">{caregiverLineId.slice(0, 8)}…</p>
+                            </div>
+                        ) : (
+                            <p className="text-ink-lighter text-sm">ยังไม่ได้เชื่อมผู้ดูแล</p>
+                        )}
                     </div>
                 )}
             </div>

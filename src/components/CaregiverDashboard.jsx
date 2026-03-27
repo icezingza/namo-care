@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
-import { Bell, Heart, Activity, Pill, RefreshCw, CheckCircle, AlertTriangle, Clock, ShieldCheck } from 'lucide-react';
-import { getAlerts, getDailyCheckins, getBehaviorSignals, getCurrentUserId } from '../firebase';
+import { useState, useEffect, useRef } from 'react';
+import { Bell, Heart, Activity, Pill, RefreshCw, CheckCircle, AlertTriangle, Clock, Check } from 'lucide-react';
+import { getAlerts, getDailyCheckins, getBehaviorSignals, getCurrentUserId, acknowledgeAlert, getMedAdherenceWeekly } from '../firebase';
 import { useLocalStorage, getTodayKey, formatThaiDate } from '../hooks/useLocalStorage';
 import PinLock from './PinLock';
+
+const POLL_INTERVAL_MS = 30_000;
 
 const CAREGIVER_PIN = '5678';
 
@@ -30,8 +32,9 @@ function formatTime(isoStr) {
     } catch { return ''; }
 }
 
-function AlertCard({ alert }) {
+function AlertCard({ alert, onAcknowledge }) {
     const cfg = SEVERITY_CONFIG[alert.severity] || SEVERITY_CONFIG.medium;
+    const isOpen = alert.status !== 'acknowledged' && alert.status !== 'resolved';
     return (
         <div className={`rounded-2xl p-4 border ${cfg.bg} ${cfg.border} animate-fade-in-up`}>
             <div className="flex items-start gap-3">
@@ -40,13 +43,23 @@ function AlertCard({ alert }) {
                     <div className="flex items-center gap-2 flex-wrap">
                         <span className={`text-sm font-bold ${cfg.text}`}>{cfg.label}</span>
                         <span className="text-sm text-ink-lighter">{ALERT_TYPE_LABEL[alert.type] || alert.type}</span>
-                        <span className={`ml-auto text-xs px-2 py-0.5 rounded-full ${alert.status === 'acknowledged' ? 'bg-serenity-green-light text-serenity-green' : 'bg-danger-light text-danger'}`}>
-                            {alert.status === 'acknowledged' ? 'รับทราบแล้ว' : 'รอดำเนินการ'}
+                        <span className={`ml-auto text-xs px-2 py-0.5 rounded-full ${!isOpen ? 'bg-serenity-green-light text-serenity-green' : 'bg-danger-light text-danger'}`}>
+                            {!isOpen ? 'รับทราบแล้ว' : 'รอดำเนินการ'}
                         </span>
                     </div>
                     <p className="text-base font-semibold text-ink mt-1">{alert.title}</p>
                     {alert.detail && <p className="text-sm text-ink-light mt-0.5">{alert.detail}</p>}
-                    <p className="text-xs text-ink-lighter mt-1">{formatTime(alert.triggeredAt)}</p>
+                    <div className="flex items-center gap-3 mt-2">
+                        <p className="text-xs text-ink-lighter">{formatTime(alert.triggeredAt)}</p>
+                        {isOpen && alert.id && (
+                            <button
+                                onClick={() => onAcknowledge(alert.id)}
+                                className="ml-auto flex items-center gap-1 text-xs font-semibold text-serenity-green bg-serenity-green-light px-3 py-1.5 rounded-full active:scale-95 transition-all"
+                            >
+                                <Check size={13} /> รับทราบ
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>
@@ -122,20 +135,24 @@ function CaregiverContent() {
     const [signals, setSignals] = useState([]);
     const [loading, setLoading] = useState(true);
     const [lastRefresh, setLastRefresh] = useState(null);
+    const [adherence, setAdherence] = useState(null);
     const { latestMood, takenCount, latestBP } = useLocalSummary();
+    const pollRef = useRef(null);
 
-    const load = async () => {
-        setLoading(true);
+    const load = async (silent = false) => {
+        if (!silent) setLoading(true);
         try {
             const uid = await getCurrentUserId();
-            const [a, c, s] = await Promise.all([
-                getAlerts(uid, 10),
+            const [a, c, s, adh] = await Promise.all([
+                getAlerts(uid, 15),
                 getDailyCheckins(uid, 7),
                 getBehaviorSignals(uid, 8),
+                getMedAdherenceWeekly(uid),
             ]);
             setAlerts(a);
             setCheckins(c);
             setSignals(s);
+            if (adh) setAdherence(adh);
             setLastRefresh(new Date());
         } catch {
             // Fail silently — show local data only
@@ -144,7 +161,17 @@ function CaregiverContent() {
         }
     };
 
-    useEffect(() => { load(); }, []);
+    useEffect(() => {
+        load();
+        pollRef.current = setInterval(() => load(true), POLL_INTERVAL_MS);
+        return () => clearInterval(pollRef.current);
+    }, []);
+
+    const handleAcknowledge = async (alertId) => {
+        // Optimistic update
+        setAlerts((prev) => prev.map((a) => a.id === alertId ? { ...a, status: 'acknowledged' } : a));
+        await acknowledgeAlert(alertId);
+    };
 
     const openAlerts = alerts.filter((a) => a.status !== 'acknowledged' && a.status !== 'resolved');
 
@@ -187,6 +214,28 @@ function CaregiverContent() {
                 </div>
             </div>
 
+            {/* Weekly adherence */}
+            {adherence !== null && (
+                <div className="card">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <Heart size={18} className="text-saffron" />
+                            <span className="font-semibold text-ink">การทานยา 7 วัน</span>
+                        </div>
+                        <span className={`text-xl font-bold ${(adherence.percentage ?? 0) >= 80 ? 'text-serenity-green' : 'text-warm'}`}>
+                            {adherence.percentage != null ? `${adherence.percentage}%` : 'ไม่มีข้อมูล'}
+                        </span>
+                    </div>
+                    <div className="mt-2 h-2 w-full rounded-full bg-cream overflow-hidden">
+                        <div
+                            className={`h-full rounded-full transition-all duration-700 ${(adherence.percentage ?? 0) >= 80 ? 'bg-serenity-green' : 'bg-warm'}`}
+                            style={{ width: `${adherence.percentage ?? 0}%` }}
+                        />
+                    </div>
+                    <p className="text-xs text-ink-lighter mt-1">บันทึกแล้ว {adherence.daysRecorded} วัน</p>
+                </div>
+            )}
+
             {/* Active Alerts */}
             <div className="space-y-3">
                 <h3 className="font-bold text-ink text-lg flex items-center gap-2">
@@ -214,7 +263,7 @@ function CaregiverContent() {
                     </div>
                 )}
 
-                {alerts.slice(0, 5).map((a, i) => <AlertCard key={a.id || i} alert={a} />)}
+                {alerts.slice(0, 5).map((a, i) => <AlertCard key={a.id || i} alert={a} onAcknowledge={handleAcknowledge} />)}
             </div>
 
             {/* Risk Signals */}

@@ -177,6 +177,57 @@ async function addDocument(path, data) {
   return docToObj(await res.json());
 }
 
+async function deleteDocument(path, id) {
+  const url = `${FS_BASE()}/${path}/${id}?key=${firebaseConfig.apiKey}`;
+  const res = await fetch(url, { method: 'DELETE', headers: await authHeaders() });
+  if (!res.ok && res.status !== 404) throw new Error(`Firestore DELETE failed (${res.status})`);
+}
+
+async function updateFields(path, id, data) {
+  const fieldPaths = Object.keys(data).map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join('&');
+  const url = `${FS_BASE()}/${path}/${id}?key=${firebaseConfig.apiKey}&${fieldPaths}`;
+  const res = await fetch(url, {
+    method: 'PATCH', headers: await authHeaders(),
+    body: JSON.stringify({ fields: toFsFields(data) }),
+  });
+  if (!res.ok) throw new Error(`Firestore UPDATE failed (${res.status})`);
+  return docToObj(await res.json());
+}
+
+// ─── Offline sync queue ──────────────────────────────────────────────────────
+
+const SYNC_QUEUE_KEY = 'namo_sync_queue';
+
+function getSyncQueue() {
+  try { return JSON.parse(localStorage.getItem(SYNC_QUEUE_KEY) || '[]'); } catch { return []; }
+}
+function setSyncQueue(q) {
+  try { localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(q.slice(-50))); } catch { /* quota */ }
+}
+
+function queueFailedWrite(path, data, docId = null) {
+  const q = getSyncQueue();
+  q.push({ path, data, docId, queuedAt: new Date().toISOString() });
+  setSyncQueue(q);
+}
+
+export async function flushSyncQueue() {
+  if (!isFirebaseConfigured() || !navigator.onLine) return { flushed: 0, remaining: 0 };
+  const q = getSyncQueue();
+  if (!q.length) return { flushed: 0, remaining: 0 };
+  const remaining = [];
+  let flushed = 0;
+  for (const item of q) {
+    try {
+      if (item.docId) await setDocument(item.path, item.docId, item.data);
+      else await addDocument(item.path, item.data);
+      flushed++;
+    } catch { remaining.push(item); }
+  }
+  setSyncQueue(remaining);
+  return { flushed, remaining: remaining.length };
+}
+
 async function listSubcollection(userId, sub, pageSize = 100) {
   const url = `${FS_BASE()}/users/${userId}/${sub}?key=${firebaseConfig.apiKey}&pageSize=${pageSize}`;
   const res = await fetch(url, { headers: await authHeaders() });
@@ -217,11 +268,13 @@ export async function saveVitalRecord(userId, record) {
     console.log('[NaMo Care][Mock] saveVitalRecord:', record);
     return { mocked: true };
   }
+  const payload = { ...record, savedAt: new Date().toISOString() };
   try {
-    return await addDocument(`users/${userId}/vitalRecords`, { ...record, savedAt: new Date().toISOString() });
+    return await addDocument(`users/${userId}/vitalRecords`, payload);
   } catch (err) {
-    console.warn('[NaMo Care] saveVitalRecord failed:', err.message);
-    return { mocked: true };
+    console.warn('[NaMo Care] saveVitalRecord failed — queuing:', err.message);
+    queueFailedWrite(`users/${userId}/vitalRecords`, payload);
+    return { queued: true };
   }
 }
 
@@ -238,11 +291,13 @@ export async function saveMoodEntry(userId, entry) {
     console.log('[NaMo Care][Mock] saveMoodEntry:', entry);
     return { mocked: true };
   }
+  const payload = { ...entry, savedAt: new Date().toISOString() };
   try {
-    return await addDocument(`users/${userId}/moodEntries`, { ...entry, savedAt: new Date().toISOString() });
+    return await addDocument(`users/${userId}/moodEntries`, payload);
   } catch (err) {
-    console.warn('[NaMo Care] saveMoodEntry failed:', err.message);
-    return { mocked: true };
+    console.warn('[NaMo Care] saveMoodEntry failed — queuing:', err.message);
+    queueFailedWrite(`users/${userId}/moodEntries`, payload);
+    return { queued: true };
   }
 }
 
@@ -259,13 +314,13 @@ export async function saveMedStatus(userId, dateKey, medsMap) {
     console.log('[NaMo Care][Mock] saveMedStatus:', medsMap);
     return { mocked: true };
   }
+  const payload = { ...medsMap, updatedAt: new Date().toISOString() };
   try {
-    return await setDocument(`users/${userId}/medStatus`, dateKey, {
-      ...medsMap, updatedAt: new Date().toISOString(),
-    });
+    return await setDocument(`users/${userId}/medStatus`, dateKey, payload);
   } catch (err) {
-    console.warn('[NaMo Care] saveMedStatus failed:', err.message);
-    return { mocked: true };
+    console.warn('[NaMo Care] saveMedStatus failed — queuing:', err.message);
+    queueFailedWrite(`users/${userId}/medStatus`, payload, dateKey);
+    return { queued: true };
   }
 }
 
@@ -304,6 +359,88 @@ export async function getBehaviorSignals(userId, limitN = 10) {
   try {
     return await queryTopLevel('behaviorSignals', [['userId', '==', userId]], 'computedAt', limitN);
   } catch { return []; }
+}
+
+export async function acknowledgeAlert(alertId) {
+  if (!isFirebaseConfigured()) return { mocked: true };
+  try {
+    return await updateFields('alerts', alertId, {
+      status: 'acknowledged',
+      acknowledgedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn('[NaMo Care] acknowledgeAlert failed:', err.message);
+    return { mocked: true };
+  }
+}
+
+export async function saveCaregiverLink(userId, caregiverLineId) {
+  if (!isFirebaseConfigured()) {
+    console.log('[NaMo Care][Mock] saveCaregiverLink:', caregiverLineId);
+    return { mocked: true };
+  }
+  try {
+    // Use deterministic caregiver ID so linking is idempotent
+    const caregiverId = `cg_${userId}`;
+    await setDocument('caregivers', caregiverId, {
+      lineUserId: caregiverLineId,
+      linkedUserIds: [userId],
+      registeredAt: new Date().toISOString(),
+    });
+    return { caregiverId };
+  } catch (err) {
+    console.warn('[NaMo Care] saveCaregiverLink failed:', err.message);
+    return { mocked: true };
+  }
+}
+
+export async function getMedAdherenceWeekly(userId) {
+  if (!isFirebaseConfigured()) return null;
+  try {
+    const statuses = await listSubcollection(userId, 'medStatus', 10);
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 7);
+    const week = statuses.filter((s) => s.id && s.id >= cutoff.toISOString().slice(0, 10));
+    const totalEntries = week.reduce((s, d) => {
+      const vals = Object.entries(d).filter(([k]) => k !== 'id' && k !== 'updatedAt');
+      return s + vals.length;
+    }, 0);
+    const takenEntries = week.reduce((s, d) => {
+      const vals = Object.entries(d).filter(([k]) => k !== 'id' && k !== 'updatedAt');
+      return s + vals.filter(([, v]) => v === true).length;
+    }, 0);
+    return {
+      percentage: totalEntries > 0 ? Math.round((takenEntries / totalEntries) * 100) : null,
+      daysRecorded: week.length,
+    };
+  } catch { return null; }
+}
+
+export async function deleteMedicationSchedule(scheduleId) {
+  if (!isFirebaseConfigured()) return { mocked: true };
+  try {
+    await deleteDocument('medicationSchedules', scheduleId);
+    return { ok: true };
+  } catch (err) {
+    console.warn('[NaMo Care] deleteMedicationSchedule failed:', err.message);
+    return { mocked: true };
+  }
+}
+
+export async function updateMedicationSchedule(scheduleId, userId, form) {
+  if (!isFirebaseConfigured()) return { mocked: true };
+  try {
+    return await updateFields('medicationSchedules', scheduleId, {
+      name: form.nameTh || form.name,
+      dosage: form.dosage,
+      times: [form.time],
+      purpose: form.purpose,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn('[NaMo Care] updateMedicationSchedule failed:', err.message);
+    return { mocked: true };
+  }
 }
 
 export async function saveSOSAlert(payload) {
