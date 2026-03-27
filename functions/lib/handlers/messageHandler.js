@@ -55,16 +55,27 @@ async function handleUserMessage(ctx, userId, replyToken, text) {
         await (0, firestoreService_1.updateDailyCheckinResponse)(ctx.db, userId, text);
     }
     const riskScore = Math.round(analysis.emotionScore * 100);
-    if (analysis.emotionLabel === "sad" || analysis.emotionLabel === "distress") {
+    if (analysis.emergencyFlag) {
+        await (0, firestoreService_1.createBehaviorSignal)(ctx.db, userId, "emotion", 100, "critical", [userLogId]);
+        await (0, alertDispatcher_1.dispatchCaregiverAlert)(ctx, {
+            userId,
+            type: "emergency",
+            severity: "critical",
+            title: "ผู้สูงอายุส่งสัญญาณขอความช่วยเหลือ",
+            detail: "พบคำขอความช่วยเหลือฉุกเฉินในข้อความ กรุณาติดต่อกลับทันที",
+            sourceMessage: text
+        });
+    }
+    else if (analysis.emotionLabel === "sad" || analysis.emotionLabel === "distress") {
         const severity = toSeverity(riskScore);
         await (0, firestoreService_1.createBehaviorSignal)(ctx.db, userId, "emotion", riskScore, severity, [userLogId]);
-        if (analysis.emotionLabel === "distress" && riskScore >= 80) {
+        if (analysis.emotionLabel === "distress" && riskScore >= 70) {
             await (0, alertDispatcher_1.dispatchCaregiverAlert)(ctx, {
                 userId,
                 type: "emotion",
                 severity: "high",
-                title: "Distress signal detected",
-                detail: "Recent message indicates high emotional distress. Please check in.",
+                title: "พบสัญญาณความทุกข์ใจจากผู้สูงอายุ",
+                detail: "ข้อความล่าสุดบ่งบอกถึงความทุกข์ใจระดับสูง ควรติดต่อเพื่อสอบถามอาการ",
                 sourceMessage: text
             });
         }

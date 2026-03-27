@@ -5,6 +5,7 @@ exports.touchLastActive = touchLastActive;
 exports.saveConversationLog = saveConversationLog;
 exports.createBehaviorSignal = createBehaviorSignal;
 exports.createAlert = createAlert;
+exports.findActiveAlertByDedupeKey = findActiveAlertByDedupeKey;
 exports.markAlertSent = markAlertSent;
 exports.getCaregiverLineIds = getCaregiverLineIds;
 exports.markLatestMedicationTaken = markLatestMedicationTaken;
@@ -99,6 +100,14 @@ async function createAlert(db, payload) {
         dedupeKey: `${payload.userId}:${payload.type}:${new Date().toISOString().slice(0, 13)}`
     });
     return ref.id;
+}
+async function findActiveAlertByDedupeKey(db, dedupeKey) {
+    const snap = await db.collection("alerts")
+        .where("dedupeKey", "==", dedupeKey)
+        .where("status", "in", ["open", "sent"])
+        .limit(1)
+        .get();
+    return snap.empty ? null : snap.docs[0].id;
 }
 async function markAlertSent(db, alertId) {
     await db.collection("alerts").doc(alertId).set({

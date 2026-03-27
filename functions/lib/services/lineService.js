@@ -37,6 +37,7 @@ exports.getLineChannelSecret = getLineChannelSecret;
 exports.getLineClient = getLineClient;
 exports.replyText = replyText;
 exports.pushText = pushText;
+exports.pushFlexMessage = pushFlexMessage;
 exports.getLineProfile = getLineProfile;
 const line = __importStar(require("@line/bot-sdk"));
 const config_1 = require("../config");
@@ -63,6 +64,12 @@ async function pushText(client, to, text) {
         to,
         messages: [{ type: "text", text }]
     });
+}
+async function pushFlexMessage(client, to, altText, 
+// Use unknown to avoid LINE SDK internal type divergence between dist/types and dist/messaging-api
+contents) {
+    const msg = { type: "flex", altText, contents: contents };
+    await client.pushMessage({ to, messages: [msg] });
 }
 async function getLineProfile(client, userId) {
     try {

@@ -37,6 +37,19 @@ export async function pushText(
   });
 }
 
+export async function pushFlexMessage(
+  client: line.messagingApi.MessagingApiClient,
+  to: string,
+  altText: string,
+  // Use unknown to avoid LINE SDK internal type divergence between dist/types and dist/messaging-api
+  contents: unknown
+): Promise<void> {
+  type PushBody = Parameters<typeof client.pushMessage>[0];
+  type FlexMsg = Extract<PushBody["messages"][number], { type: "flex" }>;
+  const msg: FlexMsg = { type: "flex", altText, contents: contents as FlexMsg["contents"] };
+  await client.pushMessage({ to, messages: [msg] });
+}
+
 export async function getLineProfile(
   client: line.messagingApi.MessagingApiClient,
   userId: string

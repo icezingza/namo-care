@@ -125,6 +125,15 @@ export async function createAlert(db: Firestore, payload: AlertPayload): Promise
   return ref.id;
 }
 
+export async function findActiveAlertByDedupeKey(db: Firestore, dedupeKey: string): Promise<string | null> {
+  const snap = await db.collection("alerts")
+    .where("dedupeKey", "==", dedupeKey)
+    .where("status", "in", ["open", "sent"])
+    .limit(1)
+    .get();
+  return snap.empty ? null : snap.docs[0].id;
+}
+
 export async function markAlertSent(db: Firestore, alertId: string): Promise<void> {
   await db.collection("alerts").doc(alertId).set(
     {
